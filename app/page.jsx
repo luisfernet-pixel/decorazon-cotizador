@@ -44,6 +44,7 @@ const initialItem = {
   descripcion: '',
   aplicaImpuesto: true,
   tasaImpuesto: COMPANY.defaultTaxRate ?? 19,
+  descuentoEspecial: 0,
 }
 
 const initialDetail = {
@@ -90,6 +91,19 @@ function formatMoneyPdf(value, currency = 'BOB') {
 function safeText(value) {
   return String(value || '').trim()
 }
+
+function normalizeQuoteNumber(value) {
+  return String(value || '').replace(/-?\s*COPIA/gi, '').trim()
+}
+
+function formatDateDisplay(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return '-'
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`
+  return raw
+}
+
 
 function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => {
@@ -204,15 +218,23 @@ export default function Page() {
         const total = base * (1 + Number(row.tasaUtilidad || 0) / 100)
         return acc + total
       }, 0)
-      const impuesto = item.aplicaImpuesto ? subtotal * (Number(item.tasaImpuesto || 0) / 100) : 0
-      return { ...item, subtotal, impuesto, total: subtotal + impuesto }
+      const descuentoPct = Number(item.descuentoEspecial || 0)
+      const descuento = subtotal * (descuentoPct / 100)
+      const baseConDescuento = subtotal - descuento
+      const impuesto = item.aplicaImpuesto ? baseConDescuento * (Number(item.tasaImpuesto || 0) / 100) : 0
+      return {
+        ...item,
+        subtotal,
+        descuentoPct,
+        descuento,
+        baseConDescuento,
+        impuesto,
+        total: baseConDescuento + impuesto,
+      }
     })
   }, [items, details])
 
   const totalProyecto = itemRows.reduce((acc, row) => acc + row.total, 0)
-  const promedioRecursos = resources.length
-    ? resources.reduce((acc, row) => acc + Number(row.costo || 0), 0) / resources.length
-    : 0
 
   function resetCotizacionActual() {
     setProject(initialProject)
@@ -241,30 +263,35 @@ export default function Page() {
     const pageHeight = doc.internal.pageSize.getHeight()
     const margin = 14
 
-    const blue = [22, 135, 157]
-    const blueDark = [18, 57, 86]
-    const dark = [30, 41, 59]
+    const green = [20, 128, 110]
+    const greenDark = [0, 92, 84]
+    const dark = [31, 41, 55]
     const soft = [248, 250, 252]
     const line = [226, 232, 240]
 
     const logoDataUrl = await getLogoDataUrl()
 
-    for (let i = 0; i < pageWidth; i += 2) {
-      const ratio = i / pageWidth
-      const r = blue[0] + (blueDark[0] - blue[0]) * ratio
-      const g = blue[1] + (blueDark[1] - blue[1]) * ratio
-      const b = blue[2] + (blueDark[2] - blue[2]) * ratio
-      doc.setFillColor(r, g, b)
-      doc.rect(i, 0, 2, 18, 'F')
-    }
+    doc.setFillColor(...greenDark)
+    doc.rect(0, 0, pageWidth, 18, 'F')
+
+    doc.setFillColor(255, 255, 255)
+    doc.roundedRect(margin, 20, 64, 34, 2.5, 2.5, 'F')
 
     if (logoDataUrl) {
       try {
-        doc.addImage(logoDataUrl, 'PNG', margin, 22, 56, 27)
+        const props = doc.getImageProperties(logoDataUrl)
+        const maxW = 54
+        const maxH = 24
+        const ratio = Math.min(maxW / props.width, maxH / props.height)
+        const imgW = props.width * ratio
+        const imgH = props.height * ratio
+        const imgX = margin + 5
+        const imgY = 25 + (24 - imgH) / 2
+        doc.addImage(logoDataUrl, 'PNG', imgX, imgY, imgW, imgH)
       } catch {}
     } else {
       doc.setFont('helvetica', 'bold')
-      doc.setTextColor(...dark)
+      doc.setTextColor(...greenDark)
       doc.setFontSize(18)
       doc.text(COMPANY.name || 'DecoraZon', margin, 34)
     }
@@ -277,11 +304,10 @@ export default function Page() {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(90, 90, 90)
-    doc.text(`Nro: ${safeText(project.numero) || '-'}`, pageWidth - margin, 39, { align: 'right' })
-    doc.text(`Fecha: ${safeText(project.fecha) || '-'}`, pageWidth - margin, 44, { align: 'right' })
-    doc.text(`Moneda: ${safeText(project.moneda) || 'BOB'}`, pageWidth - margin, 49, { align: 'right' })
+    doc.text(`Nro: ${normalizeQuoteNumber(project.numero) || '-'}`, pageWidth - margin, 39, { align: 'right' })
+    doc.text(`Fecha: ${formatDateDisplay(project.fecha)}`, pageWidth - margin, 44, { align: 'right' })
 
-    let y = 60
+    let y = 55
 
     doc.setFillColor(...soft)
     doc.setDrawColor(...line)
@@ -289,7 +315,7 @@ export default function Page() {
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(9)
-    doc.setTextColor(...blueDark)
+    doc.setTextColor(...greenDark)
     doc.text('DATOS DEL CLIENTE / PROYECTO', margin + 4, y + 6)
 
     doc.setFont('helvetica', 'normal')
@@ -299,18 +325,30 @@ export default function Page() {
     doc.text(`Empresa: ${safeText(project.empresa) || '-'}`, margin + 4, y + 19)
     doc.text(`Responsable: ${safeText(project.responsable) || '-'}`, margin + 4, y + 25)
 
-    const tableBody = itemRows.map((item) => [
-      safeText(item.codigo) || '-',
-      safeText(item.nombre) || '-',
-      safeText(item.descripcion) || '-',
-      formatMoneyPdf(item.subtotal || 0, project.moneda),
-      formatMoneyPdf(item.impuesto || 0, project.moneda),
-      formatMoneyPdf(item.total || 0, project.moneda),
-    ])
+    const showDiscountColumn = itemRows.some((item) => Number(item.descuento || 0) > 0)
+    const showTaxColumn = itemRows.some((item) => item.aplicaImpuesto && Number(item.impuesto || 0) > 0)
+
+    const tableHead = [['CÓDIGO', 'ÍTEM', 'DETALLE', 'SUBTOTAL']]
+    if (showDiscountColumn) tableHead[0].push('DESC.')
+    if (showTaxColumn) tableHead[0].push('IMPUESTO')
+    tableHead[0].push('TOTAL')
+
+    const tableBody = itemRows.map((item) => {
+      const row = [
+        safeText(item.codigo) || '-',
+        safeText(item.nombre) || '-',
+        safeText(item.descripcion) || '-',
+        formatMoneyPdf(item.subtotal || 0, project.moneda),
+      ]
+      if (showDiscountColumn) row.push(Number(item.descuento || 0) > 0 ? formatMoneyPdf(item.descuento || 0, project.moneda) : '-')
+      if (showTaxColumn) row.push(item.aplicaImpuesto ? formatMoneyPdf(item.impuesto || 0, project.moneda) : 'No incluye')
+      row.push(formatMoneyPdf(item.total || 0, project.moneda))
+      return row
+    })
 
     autoTable(doc, {
       startY: y + 36,
-      head: [['CÓDIGO', 'ÍTEM', 'DETALLE', 'SUBTOTAL', 'IMPUESTO', 'TOTAL']],
+      head: tableHead,
       body: tableBody,
       theme: 'grid',
       margin: { left: margin, right: margin, top: 24, bottom: 18 },
@@ -324,30 +362,48 @@ export default function Page() {
         valign: 'top',
       },
       headStyles: {
-        fillColor: blueDark,
+        fillColor: greenDark,
         textColor: [255, 255, 255],
         fontStyle: 'bold',
-        lineColor: blueDark,
+        lineColor: greenDark,
         lineWidth: 0.2,
       },
       alternateRowStyles: {
         fillColor: [252, 252, 252],
       },
-      columnStyles: {
-        0: { cellWidth: 18 },
-        1: { cellWidth: 34 },
-        2: { cellWidth: 58 },
-        3: { cellWidth: 26, halign: 'right' },
-        4: { cellWidth: 24, halign: 'right' },
-        5: { cellWidth: 26, halign: 'right' },
-      },
+      columnStyles: showDiscountColumn && showTaxColumn
+        ? {
+            0: { cellWidth: 18 },
+            1: { cellWidth: 30 },
+            2: { cellWidth: 54 },
+            3: { cellWidth: 22, halign: 'right' },
+            4: { cellWidth: 20, halign: 'right' },
+            5: { cellWidth: 22, halign: 'right' },
+            6: { cellWidth: 24, halign: 'right' },
+          }
+        : showDiscountColumn || showTaxColumn
+          ? {
+              0: { cellWidth: 18 },
+              1: { cellWidth: 32 },
+              2: { cellWidth: 60 },
+              3: { cellWidth: 24, halign: 'right' },
+              4: { cellWidth: 22, halign: 'right' },
+              5: { cellWidth: 26, halign: 'right' },
+            }
+          : {
+              0: { cellWidth: 18 },
+              1: { cellWidth: 38 },
+              2: { cellWidth: 68 },
+              3: { cellWidth: 28, halign: 'right' },
+              4: { cellWidth: 28, halign: 'right' },
+            },
       didDrawPage: (data) => {
         if (data.pageNumber > 1) {
           for (let i = 0; i < pageWidth; i += 2) {
             const ratio = i / pageWidth
-            const r = blue[0] + (blueDark[0] - blue[0]) * ratio
-            const g = blue[1] + (blueDark[1] - blue[1]) * ratio
-            const b = blue[2] + (blueDark[2] - blue[2]) * ratio
+            const r = green[0] + (greenDark[0] - green[0]) * ratio
+            const g = green[1] + (greenDark[1] - green[1]) * ratio
+            const b = green[2] + (greenDark[2] - green[2]) * ratio
             doc.setFillColor(r, g, b)
             doc.rect(i, 0, 2, 18, 'F')
           }
@@ -370,7 +426,7 @@ export default function Page() {
         doc.setFontSize(8)
         doc.setTextColor(100, 100, 100)
         doc.text(
-          `${safeText(COMPANY.address)}${COMPANY.phones?.length ? ` · ${COMPANY.phones.join(' / ')}` : ''}${COMPANY.email ? ` · ${COMPANY.email}` : ''}`,
+          `${safeText(COMPANY.address)}${COMPANY.phones?.length ? ` · ${COMPANY.phones.join(' / ')}` : ''}${COMPANY.email ? ` · ${COMPANY.email}` : ''} · La Paz - Bolivia`,
           margin,
           pageHeight - 7
         )
@@ -385,9 +441,9 @@ export default function Page() {
 
       for (let i = 0; i < pageWidth; i += 2) {
         const ratio = i / pageWidth
-        const r = blue[0] + (blueDark[0] - blue[0]) * ratio
-        const g = blue[1] + (blueDark[1] - blue[1]) * ratio
-        const b = blue[2] + (blueDark[2] - blue[2]) * ratio
+        const r = green[0] + (greenDark[0] - green[0]) * ratio
+        const g = green[1] + (greenDark[1] - green[1]) * ratio
+        const b = green[2] + (greenDark[2] - green[2]) * ratio
         doc.setFillColor(r, g, b)
         doc.rect(i, 0, 2, 18, 'F')
       }
@@ -422,7 +478,7 @@ export default function Page() {
 
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
-    doc.setTextColor(...blueDark)
+    doc.setTextColor(...greenDark)
     doc.text('CONDICIONES COMERCIALES', margin + 4, footerY + 7)
 
     doc.setFont('helvetica', 'normal')
@@ -437,8 +493,8 @@ export default function Page() {
 
     const totalX = margin + leftW + 6
 
-    doc.setFillColor(...dark)
-    doc.setDrawColor(...dark)
+    doc.setFillColor(...greenDark)
+    doc.setDrawColor(...greenDark)
     doc.roundedRect(totalX, footerY, rightW, 32, 3, 3, 'FD')
 
     doc.setFont('helvetica', 'normal')
@@ -459,7 +515,7 @@ export default function Page() {
       doc.text('Gracias por la oportunidad de presentar esta propuesta.', margin, thanksY)
     }
 
-    const safeNumber = (project.numero || 'cotizacion').replace(/[^\w\-]+/g, '_')
+    const safeNumber = (normalizeQuoteNumber(project.numero) || 'cotizacion').replace(/[^\w\-]+/g, '_')
     doc.save(`${safeNumber}.pdf`)
   }
 
@@ -569,6 +625,7 @@ export default function Page() {
                 descripcion: itemForm.descripcion.trim(),
                 aplicaImpuesto: itemForm.aplicaImpuesto,
                 tasaImpuesto: Number(itemForm.tasaImpuesto || 0),
+                descuentoEspecial: Number(itemForm.descuentoEspecial || 0),
               }
             : item
         )
@@ -585,6 +642,7 @@ export default function Page() {
           descripcion: itemForm.descripcion.trim(),
           aplicaImpuesto: itemForm.aplicaImpuesto,
           tasaImpuesto: Number(itemForm.tasaImpuesto || 0),
+          descuentoEspecial: Number(itemForm.descuentoEspecial || 0),
         },
       ])
     }
@@ -602,6 +660,7 @@ export default function Page() {
       descripcion: item.descripcion,
       aplicaImpuesto: item.aplicaImpuesto,
       tasaImpuesto: item.tasaImpuesto,
+      descuentoEspecial: item.descuentoEspecial || 0,
     })
   }
 
@@ -698,7 +757,7 @@ export default function Page() {
       const { error } = await supabase
         .from(TABLES.projects)
         .update({
-          quote_number: project.numero.trim() || `COT-${Date.now()}`,
+          quote_number: normalizeQuoteNumber(project.numero) || `COT-${Date.now()}`,
           project_name: project.nombreProyecto.trim(),
           company_name: project.empresa.trim(),
           responsible: project.responsable.trim(),
@@ -727,7 +786,7 @@ export default function Page() {
       const insertedProject = await supabase
         .from(TABLES.projects)
         .insert([{
-          quote_number: project.numero.trim() || `COT-${Date.now()}`,
+          quote_number: normalizeQuoteNumber(project.numero) || `COT-${Date.now()}`,
           project_name: project.nombreProyecto.trim(),
           company_name: project.empresa.trim(),
           responsible: project.responsable.trim(),
@@ -838,6 +897,7 @@ export default function Page() {
       descripcion: i.description || '',
       aplicaImpuesto: !!i.apply_tax,
       tasaImpuesto: Number(i.tax_rate || 0),
+      descuentoEspecial: 0,
     })))
 
     setDetails((detailsRes.data || []).map((d) => ({
@@ -859,7 +919,7 @@ export default function Page() {
   async function duplicateProjectFromHistory(row) {
     await openProjectFromHistory(row)
     setEditingProjectId(null)
-    setProject((prev) => ({ ...prev, numero: prev.numero ? `${prev.numero}-COPIA` : '' }))
+    setProject((prev) => ({ ...prev, numero: normalizeQuoteNumber(prev.numero) }))
     alert('Cotización cargada como copia.')
   }
 
@@ -890,7 +950,7 @@ export default function Page() {
     ['historial', 'Historial'],
   ]
 
-  const showDashboardHeader = activeTab !== 'cotizacion'
+  const showDashboardHeader = false
 
   return (
     <main className="page grid" style={{ gap: 20 }}>
@@ -978,7 +1038,7 @@ export default function Page() {
           <div className="grid grid-3">
             <div className="field">
               <label>Nro. cotización</label>
-              <input value={project.numero} onChange={(e) => setProject({ ...project, numero: e.target.value })} />
+              <input value={normalizeQuoteNumber(project.numero)} onChange={(e) => setProject({ ...project, numero: normalizeQuoteNumber(e.target.value) })} />
             </div>
             <div className="field">
               <label>Nombre del proyecto</label>
@@ -999,13 +1059,6 @@ export default function Page() {
             <div className="field">
               <label>Válida hasta</label>
               <input type="date" value={project.validoHasta} onChange={(e) => setProject({ ...project, validoHasta: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Moneda</label>
-              <select value={project.moneda} onChange={(e) => setProject({ ...project, moneda: e.target.value })}>
-                <option>BOB</option>
-                <option>USD</option>
-              </select>
             </div>
             <div className="field">
               <label>Condiciones de pago</label>
@@ -1041,7 +1094,7 @@ export default function Page() {
                 </div>
               </div>
 
-              <div className="grid grid-2">
+              <div className="grid grid-3">
                 <div className="field">
                   <label>Categoría</label>
                   <input value={itemForm.categoria} onChange={(e) => setItemForm({ ...itemForm, categoria: e.target.value })} />
@@ -1049,6 +1102,10 @@ export default function Page() {
                 <div className="field">
                   <label>Impuesto del ítem (%)</label>
                   <input type="number" value={itemForm.tasaImpuesto} onChange={(e) => setItemForm({ ...itemForm, tasaImpuesto: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label>Descuento especial (%)</label>
+                  <input type="number" min="0" max="100" value={itemForm.descuentoEspecial} onChange={(e) => setItemForm({ ...itemForm, descuentoEspecial: e.target.value })} />
                 </div>
               </div>
 
@@ -1094,6 +1151,7 @@ export default function Page() {
                   <tr>
                     <th>Código</th>
                     <th>Ítem</th>
+                    <th>Descuento</th>
                     <th>Impuesto</th>
                     <th>Total</th>
                     <th>Acciones</th>
@@ -1108,6 +1166,7 @@ export default function Page() {
                           <strong>{item.nombre}</strong>
                           <div className="tiny-muted">{item.categoria}</div>
                         </td>
+                        <td>{item.descuentoPct ? `${item.descuentoPct}%` : '-'}</td>
                         <td>{item.aplicaImpuesto ? `${item.tasaImpuesto}%` : 'No incluye'}</td>
                         <td>{money(item.total, project.moneda)}</td>
                         <td>
@@ -1127,7 +1186,7 @@ export default function Page() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={5} className="muted">Aún no agregaste ítems.</td>
+                      <td colSpan={6} className="muted">Aún no agregaste ítems.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1417,7 +1476,7 @@ export default function Page() {
             </div>
 
             <div className="quote-box">
-              <div><strong>Cotización:</strong> {project.numero || 'Sin número'}</div>
+              <div><strong>Cotización:</strong> {normalizeQuoteNumber(project.numero) || 'Sin número'}</div>
               <div><strong>Proyecto:</strong> {project.nombreProyecto || '-'}</div>
               <div><strong>Empresa:</strong> {project.empresa || '-'}</div>
               <div><strong>Responsable:</strong> {project.responsable || '-'}</div>
@@ -1429,11 +1488,12 @@ export default function Page() {
             <table>
               <thead>
                 <tr>
-                  <th style={{ width: '12%' }}>Código</th>
-                  <th style={{ width: '20%' }}>Ítem</th>
-                  <th style={{ width: '34%' }}>Detalle</th>
+                  <th style={{ width: '11%' }}>Código</th>
+                  <th style={{ width: '18%' }}>Ítem</th>
+                  <th style={{ width: '29%' }}>Detalle</th>
                   <th style={{ width: '12%', textAlign: 'right' }}>Subtotal</th>
-                  <th style={{ width: '10%', textAlign: 'right' }}>Impuesto</th>
+                  <th style={{ width: '10%', textAlign: 'right' }}>Desc.</th>
+                  <th style={{ width: '8%', textAlign: 'right' }}>Imp.</th>
                   <th style={{ width: '12%', textAlign: 'right' }}>Total</th>
                 </tr>
               </thead>
@@ -1449,13 +1509,14 @@ export default function Page() {
                         <div>{item.descripcion || '-'}</div>
                       </td>
                       <td style={{ textAlign: 'right' }}>{money(item.subtotal, project.moneda)}</td>
-                      <td style={{ textAlign: 'right' }}>{money(item.impuesto, project.moneda)}</td>
+                      <td style={{ textAlign: 'right' }}>{item.descuento ? money(item.descuento, project.moneda) : '-'}</td>
+                      <td style={{ textAlign: 'right' }}>{item.aplicaImpuesto ? money(item.impuesto, project.moneda) : 'No'}</td>
                       <td style={{ textAlign: 'right' }}><strong>{money(item.total, project.moneda)}</strong></td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={6} className="muted">Aún no hay cotización armada.</td>
+                    <td colSpan={7} className="muted">Aún no hay cotización armada.</td>
                   </tr>
                 )}
               </tbody>
@@ -1468,9 +1529,11 @@ export default function Page() {
               <div className="muted">Pago: {project.condicionesPago || '-'}</div>
               <div className="muted">Entrega: {project.tiempoEntrega || '-'}</div>
               <div className="muted">Observaciones: {project.observaciones || '-'}</div>
+              <div className="muted">Impuestos: {itemRows.some((item) => item.aplicaImpuesto) ? 'Según ítem' : 'No incluye'}</div>
             </div>
             <div className="quote-box">
               <strong>Total general</strong>
+              <div className="muted">Descuento total: {money(itemRows.reduce((acc, item) => acc + Number(item.descuento || 0), 0), project.moneda)}</div>
               <div className="kpi" style={{ fontSize: 28 }}>{money(totalProyecto, project.moneda)}</div>
             </div>
           </div>
@@ -1506,7 +1569,7 @@ export default function Page() {
                 {history.length ? (
                   history.map((row) => (
                     <tr key={row.id}>
-                      <td>{row.numero}</td>
+                      <td>{normalizeQuoteNumber(row.numero)}</td>
                       <td>{row.nombreProyecto}</td>
                       <td>{row.empresa || '-'}</td>
                       <td>{row.responsable || '-'}</td>
