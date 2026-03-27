@@ -280,13 +280,13 @@ export default function Page() {
     if (logoDataUrl) {
       try {
         const props = doc.getImageProperties(logoDataUrl)
-        const maxW = 54
-        const maxH = 24
+        const maxW = 40
+        const maxH = 20
         const ratio = Math.min(maxW / props.width, maxH / props.height)
         const imgW = props.width * ratio
         const imgH = props.height * ratio
-        const imgX = margin + 5
-        const imgY = 25 + (24 - imgH) / 2
+        const imgX = margin + 8
+        const imgY = 27 + (20 - imgH) / 2
         doc.addImage(logoDataUrl, 'PNG', imgX, imgY, imgW, imgH)
       } catch {}
     } else {
@@ -399,14 +399,8 @@ export default function Page() {
             },
       didDrawPage: (data) => {
         if (data.pageNumber > 1) {
-          for (let i = 0; i < pageWidth; i += 2) {
-            const ratio = i / pageWidth
-            const r = green[0] + (greenDark[0] - green[0]) * ratio
-            const g = green[1] + (greenDark[1] - green[1]) * ratio
-            const b = green[2] + (greenDark[2] - green[2]) * ratio
-            doc.setFillColor(r, g, b)
-            doc.rect(i, 0, 2, 18, 'F')
-          }
+          doc.setFillColor(...greenDark)
+          doc.rect(0, 0, pageWidth, 18, 'F')
 
           doc.setFont('helvetica', 'bold')
           doc.setTextColor(255, 255, 255)
@@ -461,7 +455,7 @@ export default function Page() {
       doc.setFontSize(8)
       doc.setTextColor(100, 100, 100)
       doc.text(
-        `${safeText(COMPANY.address)}${COMPANY.phones?.length ? ` · ${COMPANY.phones.join(' / ')}` : ''}${COMPANY.email ? ` · ${COMPANY.email}` : ''}`,
+        `${safeText(COMPANY.address)}${COMPANY.phones?.length ? ` · ${COMPANY.phones.join(' / ')}` : ''}${COMPANY.email ? ` · ${COMPANY.email}` : ''} · La Paz - Bolivia`,
         margin,
         pageHeight - 7
       )
@@ -821,6 +815,7 @@ export default function Page() {
           description: item.descripcion,
           apply_tax: item.aplicaImpuesto,
           tax_rate: item.tasaImpuesto,
+          discount_pct: Number(item.descuentoEspecial || 0),
           position: i + 1,
         }])
         .select()
@@ -897,7 +892,7 @@ export default function Page() {
       descripcion: i.description || '',
       aplicaImpuesto: !!i.apply_tax,
       tasaImpuesto: Number(i.tax_rate || 0),
-      descuentoEspecial: 0,
+      descuentoEspecial: Number(i.discount_pct || 0),
     })))
 
     setDetails((detailsRes.data || []).map((d) => ({
@@ -1480,7 +1475,7 @@ export default function Page() {
               <div><strong>Proyecto:</strong> {project.nombreProyecto || '-'}</div>
               <div><strong>Empresa:</strong> {project.empresa || '-'}</div>
               <div><strong>Responsable:</strong> {project.responsable || '-'}</div>
-              <div><strong>Fecha:</strong> {project.fecha || '-'}</div>
+              <div><strong>Fecha:</strong> {formatDateDisplay(project.fecha)}</div>
             </div>
           </div>
 
