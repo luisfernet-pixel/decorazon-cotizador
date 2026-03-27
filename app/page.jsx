@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
-import StatusBanner from '@/components/StatusBanner'
 import { COMPANY } from '@/lib/company'
-import { hasSupabaseEnv, supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 
 const TABLES = {
   resources: 'resource_catalog',
@@ -280,13 +279,13 @@ export default function Page() {
     if (logoDataUrl) {
       try {
         const props = doc.getImageProperties(logoDataUrl)
-        const maxW = 40
-        const maxH = 20
+        const maxW = 54
+        const maxH = 24
         const ratio = Math.min(maxW / props.width, maxH / props.height)
         const imgW = props.width * ratio
         const imgH = props.height * ratio
-        const imgX = margin + 8
-        const imgY = 27 + (20 - imgH) / 2
+        const imgX = margin + 5
+        const imgY = 25 + (24 - imgH) / 2
         doc.addImage(logoDataUrl, 'PNG', imgX, imgY, imgW, imgH)
       } catch {}
     } else {
@@ -399,8 +398,14 @@ export default function Page() {
             },
       didDrawPage: (data) => {
         if (data.pageNumber > 1) {
-          doc.setFillColor(...greenDark)
-          doc.rect(0, 0, pageWidth, 18, 'F')
+          for (let i = 0; i < pageWidth; i += 2) {
+            const ratio = i / pageWidth
+            const r = green[0] + (greenDark[0] - green[0]) * ratio
+            const g = green[1] + (greenDark[1] - green[1]) * ratio
+            const b = green[2] + (greenDark[2] - green[2]) * ratio
+            doc.setFillColor(r, g, b)
+            doc.rect(i, 0, 2, 18, 'F')
+          }
 
           doc.setFont('helvetica', 'bold')
           doc.setTextColor(255, 255, 255)
@@ -945,59 +950,85 @@ export default function Page() {
     ['historial', 'Historial'],
   ]
 
-  const showDashboardHeader = false
+  const showDashboardHeader = true
 
   return (
     <main className="page grid" style={{ gap: 20 }}>
       {showDashboardHeader && (
-        <>
-          <section className="hero">
-            <div className="hero-head">
-              <div>
-                <div className="badge" style={{ background: 'rgba(255,255,255,.14)', color: 'white' }}>
-                  DecoraZon · App completa
-                </div>
-                <h1 style={{ marginBottom: 8 }}>Cotizador DecoraZon</h1>
-                <p style={{ maxWidth: 860, lineHeight: 1.5 }}>
-                  Recursos, cotizaciones, historial, edición y PDF listos para uso real.
-                </p>
-                <p style={{ opacity: 0.9, marginBottom: 0 }}>
-                  {COMPANY.name} · {COMPANY.phones.join(' / ')} · {COMPANY.email}
-                </p>
+        <section
+          className="hero"
+          style={{
+            padding: '18px 22px',
+            borderRadius: 24,
+            background: 'linear-gradient(135deg, #167a84 0%, #1e9ab0 100%)',
+            color: 'white',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            className="hero-head"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr auto',
+              gap: 20,
+              alignItems: 'center',
+            }}
+          >
+            <div>
+              <div
+                className="badge"
+                style={{
+                  background: 'rgba(255,255,255,.14)',
+                  color: 'white',
+                  marginBottom: 14,
+                  display: 'inline-flex',
+                }}
+              >
+                DecoraZon · App completa
               </div>
-              <div className="hero-logo-wrap" style={{ background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <img
-                  src="/logo.png"
-                  alt="DecoraZon"
-                  className="hero-logo"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
-              </div>
-            </div>
-          </section>
 
-          <div className="grid grid-3">
-            <div className="card">
-              <div className="badge">Recursos</div>
-              <div className="kpi">{resources.length}</div>
-              <div className="muted">Catálogo compartido</div>
+              <h1 style={{ marginBottom: 10, color: 'white' }}>Cotizador DecoraZon</h1>
+
+              <p style={{ maxWidth: 860, lineHeight: 1.5, marginBottom: 16, color: 'white' }}>
+                Recursos, cotizaciones, historial, edición y PDF listos para uso real.
+              </p>
+
+              <p style={{ opacity: 0.96, marginBottom: 0, color: 'white' }}>
+                {COMPANY.name} · {COMPANY.address} · {COMPANY.phones.join(' / ')} · {COMPANY.email}
+              </p>
             </div>
-            <div className="card">
-              <div className="badge">Promedio costo base</div>
-              <div className="kpi">{money(promedioRecursos)}</div>
-              <div className="muted">Leído desde Supabase</div>
-            </div>
-            <div className="card">
-              <div className="badge">Total cotización actual</div>
-              <div className="kpi">{money(totalProyecto, project.moneda)}</div>
-              <div className="muted">Impuesto por ítem</div>
+
+            <div
+              className="hero-logo-wrap"
+              style={{
+                background: 'white',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 22,
+                padding: 14,
+                minWidth: 220,
+                minHeight: 140,
+              }}
+            >
+              <img
+                src="/logo.png"
+                alt="DecoraZon"
+                className="hero-logo"
+                style={{
+                  maxWidth: 180,
+                  maxHeight: 90,
+                  width: 'auto',
+                  height: 'auto',
+                  objectFit: 'contain',
+                }}
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none'
+                }}
+              />
             </div>
           </div>
-
-          <StatusBanner connected={hasSupabaseEnv} />
-        </>
+        </section>
       )}
 
       <div className="tabs">
@@ -1192,7 +1223,7 @@ export default function Page() {
       )}
 
       {activeTab === 'subitems' && (
-        <div className="grid grid-2">
+        <div className="grid" style={{ gap: 20 }}>
           <section className="card">
             <h2>{editingDetailId ? 'Editar subítem' : 'Crear subítem'}</h2>
 
@@ -1332,7 +1363,7 @@ export default function Page() {
       )}
 
       {activeTab === 'recursos' && (
-        <div className="grid grid-2">
+        <div className="grid" style={{ gap: 20 }}>
           <section className="card">
             <h2>{editingResourceId ? 'Editar recurso' : 'Alta rápida de recurso'}</h2>
 
