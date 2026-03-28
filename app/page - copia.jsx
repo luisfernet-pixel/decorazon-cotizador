@@ -379,16 +379,16 @@ export default function Page() {
       columnStyles = {
         0: { cellWidth: 18, halign: 'center' },
         1: { cellWidth: 42 },
-        2: { cellWidth: 146 },
+        2: { cellWidth: 140 },
         3: { cellWidth: 24, halign: 'right' },
         4: { cellWidth: 22, halign: 'right' },
-        5: { cellWidth: 30, halign: 'right' },
+        5: { cellWidth: 31, halign: 'right' },
       }
     } else if (showTaxColumn) {
       columnStyles = {
         0: { cellWidth: 18, halign: 'center' },
         1: { cellWidth: 42 },
-        2: { cellWidth: 142 },
+        2: { cellWidth: 133 },
         3: { cellWidth: 24, halign: 'right' },
         4: { cellWidth: 28, halign: 'center' },
         5: { cellWidth: 32, halign: 'right' },
@@ -397,7 +397,7 @@ export default function Page() {
       columnStyles = {
         0: { cellWidth: 18, halign: 'center' },
         1: { cellWidth: 44 },
-        2: { cellWidth: 170 },
+        2: { cellWidth: 157 },
         3: { cellWidth: 26, halign: 'right' },
         4: { cellWidth: 32, halign: 'right' },
       }
@@ -412,7 +412,7 @@ export default function Page() {
       styles: {
         font: 'helvetica',
         fontSize: 8.6,
-        cellPadding: 3.2,
+        cellPadding: 4,
         textColor: ink,
         lineColor: line,
         lineWidth: 0.25,
@@ -430,7 +430,7 @@ export default function Page() {
         minCellHeight: 13,
       },
       bodyStyles: {
-        minCellHeight: 13,
+        minCellHeight: 18,
       },
       columnStyles,
     })
@@ -455,15 +455,9 @@ export default function Page() {
       doc.text(formatMoneyPdf(totalProyecto, project.moneda), totalX + 80, totalLabelY + 8, { align: 'right' })
     }
 
+    const bottomY = tableEndY + (showTotalGeneral ? 28 : 16)
     const boxGap = 6
     const thirdW = (usableWidth - boxGap * 2) / 3
-    const footerBarH = 12
-    let bottomY = tableEndY + (showTotalGeneral ? 28 : 16)
-
-    if (bottomY + 28 + footerBarH + 8 > pageHeight) {
-      doc.addPage('a4', 'l')
-      bottomY = 18
-    }
 
     doc.setFillColor(...white)
     doc.setDrawColor(...line)
