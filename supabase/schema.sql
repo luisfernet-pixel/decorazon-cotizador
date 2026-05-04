@@ -44,6 +44,18 @@ create table if not exists suppliers (
   created_at timestamptz default now()
 );
 
+create table if not exists clients (
+  id uuid primary key default gen_random_uuid(),
+  client_name text not null,
+  responsible text,
+  phone text,
+  nit text,
+  legal_name text,
+  notes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 create table if not exists resource_catalog (
   id uuid primary key default gen_random_uuid(),
   type_id uuid references resource_types(id) on delete set null,
@@ -126,6 +138,7 @@ alter table company_settings enable row level security;
 alter table resource_categories enable row level security;
 alter table resource_types enable row level security;
 alter table suppliers enable row level security;
+alter table clients enable row level security;
 alter table resource_catalog enable row level security;
 alter table projects enable row level security;
 alter table project_items enable row level security;
@@ -146,6 +159,9 @@ create policy if not exists "authenticated can manage resource types" on resourc
 
 create policy if not exists "authenticated can read suppliers" on suppliers for select to authenticated using (true);
 create policy if not exists "authenticated can manage suppliers" on suppliers for all to authenticated using (true) with check (true);
+
+create policy if not exists "authenticated can read clients" on clients for select to authenticated using (true);
+create policy if not exists "authenticated can manage clients" on clients for all to authenticated using (true) with check (true);
 
 create policy if not exists "authenticated can read resources" on resource_catalog for select to authenticated using (true);
 create policy if not exists "authenticated can manage resources" on resource_catalog for all to authenticated using (true) with check (true);

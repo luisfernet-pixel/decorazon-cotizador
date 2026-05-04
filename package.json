@@ -16,5 +16,9 @@
     "next": "^15.5.3",
     "react": "19.0.0",
     "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^15.5.14"
   }
 }

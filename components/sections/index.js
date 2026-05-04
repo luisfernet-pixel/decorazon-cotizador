@@ -1,0 +1,5 @@
+export { default as HomeSection } from './HomeSection'
+export { default as HistorySection } from './HistorySection'
+export { default as ProjectSection } from './ProjectSection'
+export { default as QuoteSection } from './QuoteSection'
+export { default as ResourcesSection } from './ResourcesSection'

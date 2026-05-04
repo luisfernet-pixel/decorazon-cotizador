@@ -1,160 +1,58 @@
-'use client'
-import { useEffect, useMemo, useState } from 'react'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+﻿'use client'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { COMPANY } from '@/lib/company'
+import { getCompanyInfoLine } from '@/lib/company-format'
+import { TABLES } from '@/lib/db-constants'
+import { formatDateDisplay, money, safeText } from '@/lib/formatters'
+import {
+  createInitialDetail,
+  createInitialItem,
+  createInitialProject,
+  initialClient,
+  initialResource,
+} from '@/lib/initial-state'
+import { formatMoneyPdf, getLogoDataUrl } from '@/lib/pdf-utils'
+import { parseProjectNotes, serializeProjectNotes } from '@/lib/project-notes'
+import { resourceMeta } from '@/lib/resource-meta'
 import { supabase } from '@/lib/supabase'
-const TABLES = {
-  resources: 'resource_catalog',
-  projects: 'projects',
-  items: 'project_items',
-  details: 'project_details',
-}
-const initialProject = {
-  numero: '',
-  nombreProyecto: '',
-  empresa: '',
-  responsable: '',
-  fecha: new Date().toISOString().slice(0, 10),
-  validoHasta: '',
-  moneda: 'BOB',
-  condicionesPago: '50% anticipo / 50% contra entrega',
-  tiempoEntrega: 'A coordinar según alcance',
-  observaciones: '',
-  modoCotizacion: 'total',
-}
-const initialResource = {
-  tipo: 'Material',
-  categoria: 'Acrílicos',
-  nombre: '',
-  especificacion: '',
-  unidad: 'unidad',
-  proveedor: '',
-  costo: 0,
-}
-const initialItem = {
-  codigo: '',
-  nombre: '',
-  categoria: 'General',
-  descripcion: '',
-  aplicaImpuesto: true,
-  tasaImpuesto: COMPANY.defaultTaxRate ?? 19,
-  descuentoEspecial: 0,
-}
-const initialDetail = {
-  itemId: '',
-  tipo: 'Material',
-  descripcion: '',
-  proveedor: '',
-  unidad: 'unidad',
-  cantidad: 1,
-  costoUnitario: 0,
-  tasaUtilidad: COMPANY.defaultMarginRate ?? 100,
-  especificacion: '',
-}
-const BRAND = {
-  green: '#1f9aad',
-  greenDark: '#116a71',
-  greenDeep: '#0d4f57',
-  greenSoft: '#e8f7f8',
-  red: '#ef174e',
-  ink: '#14213d',
-  border: '#dbe5ea',
-  bg: '#f6f8fb',
-}
-const COMPANY_RUBRO = 'Diseño, fabricación y ambientación comercial'
-function money(value, currency = 'BOB') {
-  return new Intl.NumberFormat('es-BO', {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-  }).format(Number(value || 0))
-}
-function uid() {
-  return Math.random().toString(36).slice(2, 10)
-}
-function resourceMeta(row) {
-  try {
-    return row.notes ? JSON.parse(row.notes) : {}
-  } catch {
-    return {}
-  }
-}
-function formatMoneyPdf(value, currency = 'BOB') {
-  const num = Number(value || 0)
-  const fixed = num.toFixed(2)
-  const [intPart, decPart] = fixed.split('.')
-  const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  const prefix = currency === 'USD' ? '$us ' : 'Bs '
-  return `${prefix}${withThousands},${decPart}`
-}
-function safeText(value) {
-  return String(value || '').trim()
-}
-function formatDateDisplay(value) {
-  const raw = String(value || '').trim()
-  if (!raw) return '-'
-  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  if (match) return `${match[3]}-${match[2]}-${match[1]}`
-  return raw
-}
-
-function parseProjectNotes(notes) {
-  const raw = String(notes || '').trim()
-  if (!raw) return { observaciones: '', modoCotizacion: 'total' }
-  try {
-    const parsed = JSON.parse(raw)
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return {
-        observaciones: String(parsed.observaciones || ''),
-        modoCotizacion: parsed.modoCotizacion === 'opciones' ? 'opciones' : 'total',
-      }
-    }
-  } catch {}
-  return { observaciones: raw, modoCotizacion: 'total' }
-}
-
-function serializeProjectNotes(project) {
-  return JSON.stringify({
-    observaciones: String(project.observaciones || ''),
-    modoCotizacion: project.modoCotizacion === 'opciones' ? 'opciones' : 'total',
-  })
-}
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onloadend = () => resolve(reader.result)
-    reader.onerror = reject
-    reader.readAsDataURL(blob)
-  })
-}
-async function getLogoDataUrl() {
-  try {
-    const response = await fetch('/logo.png')
-    if (!response.ok) return null
-    const blob = await response.blob()
-    const dataUrl = await blobToDataUrl(blob)
-    return typeof dataUrl === 'string' ? dataUrl : null
-  } catch {
-    return null
-  }
-}
+import { BRAND, COMPANY_RUBRO } from '@/lib/theme'
+import { APP_TABS } from '@/lib/ui-constants'
+import { uid } from '@/lib/id'
+import DashboardHero from '@/components/DashboardHero'
+import { HistorySection, HomeSection, ProjectSection, QuoteSection, ResourcesSection } from '@/components/sections'
+import TabNav from '@/components/TabNav'
+const initialItem = createInitialItem(COMPANY.defaultTaxRate ?? 19)
+const initialDetail = createInitialDetail(COMPANY.defaultMarginRate ?? 100)
 export default function Page() {
   const [activeTab, setActiveTab] = useState('inicio')
-  const [project, setProject] = useState(initialProject)
+  const [project, setProject] = useState(() => createInitialProject())
   const [resourceForm, setResourceForm] = useState(initialResource)
   const [itemForm, setItemForm] = useState(initialItem)
   const [detailForm, setDetailForm] = useState(initialDetail)
+  const [clientForm, setClientForm] = useState(initialClient)
   const [resources, setResources] = useState([])
+  const [clients, setClients] = useState([])
   const [history, setHistory] = useState([])
   const [items, setItems] = useState([])
   const [details, setDetails] = useState([])
   const [savingResource, setSavingResource] = useState(false)
   const [savingProject, setSavingProject] = useState(false)
+  const [savingClient, setSavingClient] = useState(false)
   const [editingResourceId, setEditingResourceId] = useState(null)
+  const [editingClientId, setEditingClientId] = useState(null)
   const [editingItemId, setEditingItemId] = useState(null)
   const [editingDetailId, setEditingDetailId] = useState(null)
   const [editingProjectId, setEditingProjectId] = useState(null)
+  const [toastMessage, setToastMessage] = useState('')
+  const toastTimeoutRef = useRef(null)
+  function showToast(message) {
+    setToastMessage(message)
+    if (toastTimeoutRef.current) window.clearTimeout(toastTimeoutRef.current)
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setToastMessage('')
+      toastTimeoutRef.current = null
+    }, 2200)
+  }
   async function loadResources() {
     if (!supabase) return
     const { data, error } = await supabase
@@ -197,53 +95,96 @@ export default function Page() {
         id: row.id,
         numero: row.quote_number || '',
         nombreProyecto: row.project_name || '',
-        empresa: row.company_name || '',
+        clienteId: parsedNotes.clienteId || '',
+        cliente: parsedNotes.cliente || '',
+        empresa: row.company_name || parsedNotes.razonSocial || parsedNotes.cliente || '',
         responsable: row.responsible || '',
+        telefono: parsedNotes.telefono || '',
+        nit: parsedNotes.nit || '',
+        razonSocial: parsedNotes.razonSocial || row.company_name || '',
         fecha: row.date || row.created_at || '',
         moneda: row.currency || 'BOB',
         condicionesPago: row.payment_terms || '',
         tiempoEntrega: row.delivery_time || '',
         observaciones: parsedNotes.observaciones,
         modoCotizacion: parsedNotes.modoCotizacion,
+        descuentoGeneralPct: Number(parsedNotes.descuentoGeneralPct || 0),
         validoHasta: row.valid_until || '',
       }
     })
     setHistory(mapped)
   }
+  async function loadClients() {
+    if (!supabase) return
+    const { data, error } = await supabase
+      .from(TABLES.clients)
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) {
+      alert('Error leyendo clientes: ' + error.message)
+      return
+    }
+    setClients((data || []).map((row) => ({
+      id: row.id,
+      cliente: row.client_name || '',
+      responsable: row.responsible || '',
+      telefono: row.phone || '',
+      nit: row.nit || '',
+      razonSocial: row.legal_name || '',
+    })))
+  }
+  function applyClientInProject(client) {
+    setProject((prev) => ({
+      ...prev,
+      clienteId: client?.id || '',
+      cliente: client?.cliente || '',
+      responsable: client?.responsable || '',
+      telefono: client?.telefono || '',
+      nit: client?.nit || '',
+      razonSocial: client?.razonSocial || '',
+      empresa: client?.razonSocial || client?.cliente || '',
+    }))
+  }
   useEffect(() => {
     loadResources()
+    loadClients()
     loadHistory()
   }, [])
+  useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) window.clearTimeout(toastTimeoutRef.current)
+    }
+  }, [])
+  const detailsByItemId = useMemo(() => {
+    return details.reduce((acc, detail) => {
+      const key = detail.itemId || ''
+      if (!key) return acc
+      if (!acc[key]) acc[key] = []
+      acc[key].push(detail)
+      return acc
+    }, {})
+  }, [details])
   const itemRows = useMemo(() => {
     return items.map((item) => {
-      const related = details.filter((d) => d.itemId === item.id)
+      const related = detailsByItemId[item.id] || []
+      const cantidad = related.reduce((acc, row) => acc + Number(row.cantidad || 0), 0)
       const subtotal = related.reduce((acc, row) => {
         const base = Number(row.cantidad || 0) * Number(row.costoUnitario || 0)
         const total = base * (1 + Number(row.tasaUtilidad || 0) / 100)
         return acc + total
       }, 0)
-      const descuentoPct = Number(item.descuentoEspecial || 0)
-      const descuento = subtotal * (descuentoPct / 100)
-      const baseConDescuento = subtotal - descuento
-      const impuesto = item.aplicaImpuesto ? baseConDescuento * (Number(item.tasaImpuesto || 0) / 100) : 0
-      return { ...item, subtotal, descuentoPct, descuento, baseConDescuento, impuesto, total: baseConDescuento + impuesto }
+      const precioUnitario = cantidad > 0 ? subtotal / cantidad : 0
+      const impuesto = item.aplicaImpuesto ? subtotal * (Number(item.tasaImpuesto || 0) / 100) : 0
+      return { ...item, cantidad, precioUnitario, subtotal, impuesto, total: subtotal + impuesto }
     })
-  }, [items, details])
-  const totalProyecto = itemRows.reduce((acc, row) => acc + row.total, 0)
-  const companyPhonesText = Array.isArray(COMPANY.phones) ? COMPANY.phones.join(' / ') : ''
-  const companyAddressText = safeText(COMPANY.address)
-  const companyEmailText = safeText(COMPANY.email)
-  const companyInfoLine = [companyAddressText, companyPhonesText, companyEmailText].filter(Boolean).join(' · ')
-  function getItemDetailSummary(itemId) {
-    const related = details.filter((d) => d.itemId === itemId)
-    if (!related.length) return '-'
-    return related.map((d) => `• ${d.tipo}: ${d.descripcion} · ${Number(d.cantidad || 0)} ${safeText(d.unidad) || ''}`.trim()).join('\n')
-  }
-  const promedioRecursos = resources.length
-    ? resources.reduce((acc, row) => acc + Number(row.costo || 0), 0) / resources.length
-    : 0
+  }, [items, detailsByItemId])
+  const subtotalProyecto = itemRows.reduce((acc, row) => acc + row.total, 0)
+  const descuentoGeneralPct = Number(project.descuentoGeneralPct || 0)
+  const descuentoGeneralMonto = subtotalProyecto * (descuentoGeneralPct / 100)
+  const totalProyecto = subtotalProyecto - descuentoGeneralMonto
+  const companyInfoLine = getCompanyInfoLine(COMPANY)
   function resetCotizacionActual() {
-    setProject(initialProject)
+    setProject(createInitialProject())
     setItems([])
     setDetails([])
     setEditingProjectId(null)
@@ -254,82 +195,86 @@ export default function Page() {
   }
 
   async function downloadPdf() {
-    if (!itemRows.length) {
-      alert('Primero agrega al menos un ítem.')
-      return
-    }
+    try {
+      if (!itemRows.length) {
+        alert('Primero agrega al menos un ítem.')
+        return
+      }
 
-    const doc = new jsPDF({
-      orientation: 'l',
-      unit: 'mm',
-      format: 'a4',
-    })
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import('jspdf'),
+        import('jspdf-autotable'),
+      ])
 
-    const pageWidth = doc.internal.pageSize.getWidth()
-    const pageHeight = doc.internal.pageSize.getHeight()
-    const margin = 10
-    const usableWidth = pageWidth - margin * 2
+      const doc = new jsPDF({
+        orientation: 'l',
+        unit: 'mm',
+        format: 'a4',
+      })
 
-    const greenDark = [17, 106, 113]
-    const ink = [20, 33, 61]
-    const grayHead = [110, 110, 110]
-    const graySoft = [245, 247, 248]
-    const line = [60, 60, 60]
-    const white = [255, 255, 255]
+      const pageWidth = doc.internal.pageSize.getWidth()
+      const pageHeight = doc.internal.pageSize.getHeight()
+      const margin = 10
+      const usableWidth = pageWidth - margin * 2
 
-    const logoDataUrl = await getLogoDataUrl()
-    const showDiscountColumn = itemRows.some((item) => Number(item.descuento || 0) > 0)
-    const showTaxColumn = itemRows.some((item) => item.aplicaImpuesto && Number(item.impuesto || 0) > 0)
-    const showTotalGeneral = (project.modoCotizacion || 'total') !== 'opciones'
+      const greenDark = [17, 106, 113]
+      const ink = [20, 33, 61]
+      const grayHead = [110, 110, 110]
+      const line = [60, 60, 60]
+      const white = [255, 255, 255]
 
-    const topY = 10
-    const rightW = 78
-    const gap = 10
-    const leftW = usableWidth - rightW - gap
-    const rightX = margin + leftW + gap
+      const logoDataUrl = await getLogoDataUrl()
+      const incluyeImpuestos = itemRows.some((item) => item.aplicaImpuesto && Number(item.impuesto || 0) > 0)
+      const showTotalGeneral = (project.modoCotizacion || 'total') !== 'opciones'
 
-    if (logoDataUrl) {
-      try {
-        const props = doc.getImageProperties(logoDataUrl)
-        const maxW = 42
-        const maxH = 32
-        const ratio = Math.min(maxW / props.width, maxH / props.height)
-        const imgW = props.width * ratio
-        const imgH = props.height * ratio
-        doc.addImage(logoDataUrl, 'PNG', margin + 2, topY + 4, imgW, imgH)
-      } catch {}
-    }
+      const topY = 10
+      const rightW = 78
+      const gap = 10
+      const leftW = usableWidth - rightW - gap
+      const rightX = margin + leftW + gap
 
-    const textStartX = margin + 46
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(...greenDark)
-    doc.setFontSize(31)
-    doc.text(COMPANY.name || 'DecoraZon', textStartX, topY + 16)
+      if (logoDataUrl) {
+        try {
+          const props = doc.getImageProperties(logoDataUrl)
+          const maxW = 42
+          const maxH = 32
+          const ratio = Math.min(maxW / props.width, maxH / props.height)
+          const imgW = props.width * ratio
+          const imgH = props.height * ratio
+          doc.addImage(logoDataUrl, 'PNG', margin + 2, topY + 4, imgW, imgH)
+        } catch {}
+      }
 
-    doc.setTextColor(...grayHead)
+      const textStartX = margin + 46
+      doc.setFont('helvetica', 'bold')
+      doc.setTextColor(...greenDark)
+      doc.setFontSize(31)
+      doc.text(COMPANY.name || 'DecoraZon', textStartX, topY + 16)
+
+      doc.setTextColor(...grayHead)
     doc.setFontSize(14)
-    doc.text(COMPANY_RUBRO, textStartX, topY + 25)
+      doc.text(COMPANY_RUBRO, textStartX, topY + 25)
 
-    doc.setFillColor(...greenDark)
+      doc.setFillColor(...greenDark)
     doc.setDrawColor(...line)
     doc.rect(rightX, topY + 2, rightW, 22, 'FD')
     doc.setTextColor(...white)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(23)
-    doc.text('COTIZACION', rightX + rightW / 2, topY + 16, { align: 'center' })
+      doc.text('COTIZACION', rightX + rightW / 2, topY + 16, { align: 'center' })
 
-    doc.setFillColor(...grayHead)
+      doc.setFillColor(...grayHead)
     doc.rect(rightX, topY + 36, rightW, 14, 'FD')
     doc.setTextColor(...white)
     doc.setFontSize(11)
-    doc.text(`No.: ${safeText(project.numero) || '-'}`, rightX + rightW - 8, topY + 45, { align: 'right' })
+      doc.text(`No.: ${safeText(project.numero) || '-'}`, rightX + rightW - 8, topY + 45, { align: 'right' })
 
-    doc.setFillColor(...grayHead)
+      doc.setFillColor(...grayHead)
     doc.rect(rightX, topY + 54, rightW, 14, 'FD')
     doc.text(`Fecha:`, rightX + 8, topY + 63)
-    doc.text(`${formatDateDisplay(project.fecha)}`, rightX + rightW - 8, topY + 63, { align: 'right' })
+      doc.text(`${formatDateDisplay(project.fecha)}`, rightX + rightW - 8, topY + 63, { align: 'right' })
 
-    const infoBoxY = topY + 42
+      const infoBoxY = topY + 42
     const infoBoxH = 24
     doc.setDrawColor(...line)
     doc.setFillColor(...white)
@@ -342,68 +287,34 @@ export default function Page() {
     doc.text('Responsable:', margin + 90, infoBoxY + 8)
     doc.setFont('helvetica', 'normal')
     doc.text(safeText(project.nombreProyecto) || '-', margin + 28, infoBoxY + 8)
-    doc.text(safeText(project.empresa) || '-', margin + 28, infoBoxY + 18)
+    doc.text(safeText(project.razonSocial || project.empresa || project.cliente) || '-', margin + 28, infoBoxY + 18)
     doc.text(safeText(project.responsable) || '-', margin + 124, infoBoxY + 8)
 
-    const tableStartY = 80
-    const head = [['COD.', 'ITEM', 'DESCRIPCION', 'SUBTOTAL']]
-    if (showDiscountColumn) head[0].push('DESC.')
-    if (showTaxColumn) head[0].push('IMPUESTO')
-    head[0].push('TOTAL')
+      const tableStartY = 80
+      const head = [['COD.', 'ITEM', 'DESCRIPCION', 'CANT.', 'P. UNITARIO', 'TOTAL']]
 
-    const body = itemRows.map((item, index) => {
+      const body = itemRows.map((item, index) => {
       const row = [
         safeText(item.codigo) || String(index + 1).padStart(3, '0'),
         safeText(item.nombre) || '-',
         safeText(item.descripcion) || '-',
-        formatMoneyPdf(item.subtotal || 0, project.moneda),
+        Number(item.cantidad || 0).toLocaleString('es-BO'),
+        formatMoneyPdf(item.precioUnitario || 0, project.moneda),
+        formatMoneyPdf(item.total || 0, project.moneda),
       ]
-      if (showDiscountColumn) row.push(Number(item.descuento || 0) > 0 ? formatMoneyPdf(item.descuento || 0, project.moneda) : '')
-      if (showTaxColumn) row.push(item.aplicaImpuesto ? formatMoneyPdf(item.impuesto || 0, project.moneda) : 'No incluye')
-      row.push(formatMoneyPdf(item.total || 0, project.moneda))
       return row
     })
 
-    let columnStyles
-    if (showDiscountColumn && showTaxColumn) {
-      columnStyles = {
-        0: { cellWidth: 18, halign: 'center' },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 115 },
-        3: { cellWidth: 24, halign: 'right' },
-        4: { cellWidth: 20, halign: 'right' },
-        5: { cellWidth: 28, halign: 'center' },
-        6: { cellWidth: 32, halign: 'right' },
-      }
-    } else if (showDiscountColumn) {
-      columnStyles = {
-        0: { cellWidth: 18, halign: 'center' },
-        1: { cellWidth: 42 },
-        2: { cellWidth: 146 },
-        3: { cellWidth: 24, halign: 'right' },
-        4: { cellWidth: 22, halign: 'right' },
-        5: { cellWidth: 30, halign: 'right' },
-      }
-    } else if (showTaxColumn) {
-      columnStyles = {
-        0: { cellWidth: 18, halign: 'center' },
-        1: { cellWidth: 42 },
-        2: { cellWidth: 142 },
-        3: { cellWidth: 24, halign: 'right' },
-        4: { cellWidth: 28, halign: 'center' },
-        5: { cellWidth: 32, halign: 'right' },
-      }
-    } else {
-      columnStyles = {
-        0: { cellWidth: 18, halign: 'center' },
-        1: { cellWidth: 44 },
-        2: { cellWidth: 170 },
-        3: { cellWidth: 26, halign: 'right' },
-        4: { cellWidth: 32, halign: 'right' },
-      }
+      const columnStyles = {
+      0: { cellWidth: 18, halign: 'center' },
+      1: { cellWidth: 38 },
+      2: { cellWidth: 132 },
+      3: { cellWidth: 20, halign: 'right' },
+      4: { cellWidth: 30, halign: 'right' },
+      5: { cellWidth: 32, halign: 'right' },
     }
 
-    autoTable(doc, {
+      autoTable(doc, {
       startY: tableStartY,
       head,
       body,
@@ -435,9 +346,9 @@ export default function Page() {
       columnStyles,
     })
 
-    const tableEndY = doc.lastAutoTable?.finalY || tableStartY + 60
+      const tableEndY = doc.lastAutoTable?.finalY || tableStartY + 60
 
-    if (showTotalGeneral) {
+      if (showTotalGeneral) {
       const totalLabelY = tableEndY
       const totalX = pageWidth - margin - 84
       doc.setFillColor(...greenDark)
@@ -455,17 +366,17 @@ export default function Page() {
       doc.text(formatMoneyPdf(totalProyecto, project.moneda), totalX + 80, totalLabelY + 8, { align: 'right' })
     }
 
-    const boxGap = 6
-    const thirdW = (usableWidth - boxGap * 2) / 3
-    const footerBarH = 12
-    let bottomY = tableEndY + (showTotalGeneral ? 28 : 16)
+      const boxGap = 6
+      const thirdW = (usableWidth - boxGap * 2) / 3
+      const footerBarH = 12
+      let bottomY = tableEndY + (showTotalGeneral ? 28 : 16)
 
-    if (bottomY + 28 + footerBarH + 8 > pageHeight) {
+      if (bottomY + 28 + footerBarH + 8 > pageHeight) {
       doc.addPage('a4', 'l')
       bottomY = 18
     }
 
-    doc.setFillColor(...white)
+      doc.setFillColor(...white)
     doc.setDrawColor(...line)
     doc.rect(margin, bottomY, thirdW, 28, 'FD')
     doc.rect(margin + thirdW + boxGap, bottomY, thirdW, 28, 'FD')
@@ -479,44 +390,50 @@ export default function Page() {
 
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
-    const condLines = [
+      const condLines = [
       `Forma de pago: ${safeText(project.condicionesPago) || '-'}`,
       `Tiempo de entrega: ${safeText(project.tiempoEntrega) || '-'}`,
+      incluyeImpuestos ? 'La cotización incluye impuestos de ley.' : 'La cotización no incluye impuestos de ley.',
     ]
-    const condText = doc.splitTextToSize(condLines.join('\n'), thirdW - 12)
-    doc.text(condText, margin + 6, bottomY + 15)
+      const condText = doc.splitTextToSize(condLines.join('\n'), thirdW - 12)
+      doc.text(condText, margin + 6, bottomY + 15)
 
-    const obsLines = [safeText(project.observaciones) || '-']
+      const obsLines = [safeText(project.observaciones) || '-']
     if (safeText(project.validoHasta)) {
       obsLines.push(`Validez de la oferta: ${formatDateDisplay(project.validoHasta)}`)
     }
     if (!showTotalGeneral) {
       obsLines.push('El cliente podrá elegir una alternativa.')
     }
-    const obsText = doc.splitTextToSize(obsLines.join('\n'), thirdW - 12)
-    doc.text(obsText, margin + thirdW + boxGap + 6, bottomY + 15)
+      const obsText = doc.splitTextToSize(obsLines.join('\n'), thirdW - 12)
+      doc.text(obsText, margin + thirdW + boxGap + 6, bottomY + 15)
 
-    const sigX = margin + (thirdW + boxGap) * 2
+      const sigX = margin + (thirdW + boxGap) * 2
     doc.setFont('helvetica', 'normal')
     doc.line(sigX + 12, bottomY + 20, sigX + thirdW - 12, bottomY + 20)
     doc.setFont('helvetica', 'bold')
     doc.text('Tina Rodriguez', sigX + thirdW / 2, bottomY + 26, { align: 'center' })
 
-    doc.setFillColor(...greenDark)
+      doc.setFillColor(...greenDark)
     doc.rect(0, pageHeight - 12, pageWidth, 12, 'F')
     doc.setTextColor(...white)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8.8)
-    const footerText = [
+      const footerText = [
       safeText(COMPANY.address),
-      companyPhonesText,
-      companyEmailText,
+      safeText((COMPANY.phones || []).join(' / ')),
+      safeText(COMPANY.email),
       'La Paz - Bolivia',
     ].filter(Boolean).join(' · ')
-    doc.text(footerText, pageWidth / 2, pageHeight - 4.2, { align: 'center' })
+      doc.text(footerText, pageWidth / 2, pageHeight - 4.2, { align: 'center' })
 
-    const safeNumber = (safeText(project.numero) || 'cotizacion').replace(/[^\w\-]+/g, '_')
-    doc.save(`${safeNumber}.pdf`)
+      const safeNumber = (safeText(project.numero) || 'cotizacion').replace(/[^\w\-]+/g, '_')
+      doc.save(`${safeNumber}.pdf`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error desconocido al generar PDF.'
+      console.error('Error generando PDF:', error)
+      alert(`No se pudo generar el PDF: ${message}`)
+    }
   }
   async function saveResource(e) {
     e.preventDefault()
@@ -555,7 +472,71 @@ export default function Page() {
     setEditingResourceId(null)
     setResourceForm(initialResource)
     await loadResources()
-    alert(editingResourceId ? 'Recurso actualizado.' : 'Recurso guardado.')
+    showToast(editingResourceId ? 'Recurso actualizado.' : 'Recurso guardado.')
+  }
+  async function saveClient(e) {
+    e.preventDefault()
+    if (!supabase) return
+    if (!clientForm.cliente.trim()) {
+      alert('Escribe el nombre del cliente.')
+      return
+    }
+    setSavingClient(true)
+    const payload = {
+      client_name: clientForm.cliente.trim(),
+      responsible: clientForm.responsable.trim(),
+      phone: clientForm.telefono.trim(),
+      nit: clientForm.nit.trim(),
+      legal_name: clientForm.razonSocial.trim(),
+    }
+    let result
+    if (editingClientId) {
+      result = await supabase.from(TABLES.clients).update(payload).eq('id', editingClientId)
+    } else {
+      result = await supabase.from(TABLES.clients).insert([payload])
+    }
+    setSavingClient(false)
+    if (result.error) {
+      alert('Error al guardar cliente: ' + result.error.message)
+      return
+    }
+    setEditingClientId(null)
+    setClientForm(initialClient)
+    await loadClients()
+  }
+  function editClient(client) {
+    setActiveTab('clientes')
+    setEditingClientId(client.id)
+    setClientForm({
+      cliente: client.cliente || '',
+      responsable: client.responsable || '',
+      telefono: client.telefono || '',
+      nit: client.nit || '',
+      razonSocial: client.razonSocial || '',
+    })
+  }
+  async function deleteClient(id) {
+    if (!supabase || !confirm('Eliminar este cliente?')) return
+    const { error } = await supabase.from(TABLES.clients).delete().eq('id', id)
+    if (error) {
+      alert('Error eliminando cliente: ' + error.message)
+      return
+    }
+    if (editingClientId === id) {
+      setEditingClientId(null)
+      setClientForm(initialClient)
+    }
+    setProject((prev) => (prev.clienteId === id ? {
+      ...prev,
+      clienteId: '',
+      cliente: '',
+      responsable: '',
+      telefono: '',
+      nit: '',
+      razonSocial: '',
+      empresa: '',
+    } : prev))
+    await loadClients()
   }
   async function deleteResource(id) {
     if (!supabase || !confirm('¿Eliminar este recurso?')) return
@@ -734,7 +715,7 @@ export default function Page() {
         .update({
           quote_number: project.numero.trim() || `COT-${Date.now()}`,
           project_name: project.nombreProyecto.trim(),
-          company_name: project.empresa.trim(),
+          company_name: project.razonSocial.trim() || project.empresa.trim() || project.cliente.trim(),
           responsible: project.responsable.trim(),
           date: project.fecha,
           valid_until: project.validoHasta || null,
@@ -761,7 +742,7 @@ export default function Page() {
         .insert([{
           quote_number: project.numero.trim() || `COT-${Date.now()}`,
           project_name: project.nombreProyecto.trim(),
-          company_name: project.empresa.trim(),
+          company_name: project.razonSocial.trim() || project.empresa.trim() || project.cliente.trim(),
           responsible: project.responsable.trim(),
           date: project.fecha,
           valid_until: project.validoHasta || null,
@@ -827,7 +808,7 @@ export default function Page() {
     }
     setSavingProject(false)
     await loadHistory()
-    alert(editingProjectId ? 'Cotización actualizada.' : 'Cotización guardada.')
+    showToast(editingProjectId ? 'Cotización actualizada.' : 'Cotización guardada.')
   }
   async function openProjectFromHistory(row) {
     if (!supabase) return
@@ -843,8 +824,13 @@ export default function Page() {
     setProject({
       numero: row.numero || '',
       nombreProyecto: row.nombreProyecto || '',
+      clienteId: row.clienteId || '',
+      cliente: row.cliente || '',
       empresa: row.empresa || '',
       responsable: row.responsable || '',
+      telefono: row.telefono || '',
+      nit: row.nit || '',
+      razonSocial: row.razonSocial || row.empresa || '',
       fecha: String(row.fecha || '').slice(0, 10),
       validoHasta: row.validoHasta || '',
       moneda: row.moneda || 'BOB',
@@ -852,6 +838,7 @@ export default function Page() {
       tiempoEntrega: row.tiempoEntrega || '',
       observaciones: row.observaciones || '',
       modoCotizacion: row.modoCotizacion === 'opciones' ? 'opciones' : 'total',
+      descuentoGeneralPct: Number(row.descuentoGeneralPct || 0),
     })
     setItems((itemsRes.data || []).map((i) => ({
       id: i.id,
@@ -899,124 +886,151 @@ export default function Page() {
     if (editingProjectId === id) resetCotizacionActual()
     await loadHistory()
   }
-  const tabs = [
-    ['inicio', 'Inicio'],
-    ['proyecto', 'Proyecto'],
-    ['items', 'Ítems'],
-    ['subitems', 'Subítems'],
-    ['recursos', 'Recursos'],
-    ['cotizacion', 'Cotización'],
-    ['historial', 'Historial'],
-  ]
   const showDashboardHeader = activeTab !== 'cotizacion'
   return (
     <main className="page grid" style={{ gap: 20 }}>
+      {toastMessage ? <div className="toast-notice">{toastMessage}</div> : null}
       {showDashboardHeader && (
-        <section className="hero">
-          <div className="hero-head">
-            <div className="brand-lockup">
-              <div className="hero-logo-wrap">
-                <img
-                  src="/logo.png"
-                  alt="DecoraZon"
-                  className="hero-logo"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
-              </div>
-              <div className="brand-copy">
-                <div className="hero-eyebrow">COTIZADOR DECORAZON · APP WEB</div>
-                <h1>Cotizador DecoraZon</h1>
-                <div className="hero-rubro">{COMPANY_RUBRO}</div>
-                <p className="hero-subtitle">
-                  Recursos, cotizaciones, historial, edición y PDF listos para uso real.
-                </p>
-                <p className="hero-meta">{companyInfoLine}</p>
-              </div>
-            </div>
-          </div>
-        </section>
+        <DashboardHero rubro={COMPANY_RUBRO} infoLine={companyInfoLine} />
       )}
-      <div className="tabs">
-        {tabs.map(([id, label]) => (
-          <button
-            key={id}
-            className={`tab-btn ${activeTab === id ? 'active' : ''}`}
-            onClick={() => setActiveTab(id)}
-            type="button"
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <TabNav tabs={APP_TABS} activeTab={activeTab} onTabChange={setActiveTab} />
       {activeTab === 'inicio' && (
-        <section className="card">
-          <h2>Inicio</h2>
-          <p className="muted">Flujo sugerido: Proyecto → Ítems → Subítems → Cotización → Guardar en Supabase.</p>
-        </section>
+        <HomeSection
+          resources={resources}
+          clients={clients}
+          history={history}
+          details={details}
+          itemRows={itemRows}
+          totalProyecto={totalProyecto}
+          money={(value) => money(value, project.moneda)}
+        />
       )}
       {activeTab === 'proyecto' && (
-        <section className="card">
-          <h2>Datos del proyecto</h2>
-          <div className="action-row" style={{ marginBottom: 12 }}>
-            <button type="button" className="btn success" onClick={resetCotizacionActual}>
-              Nueva cotización
-            </button>
-          </div>
-          <div className="grid grid-3">
-            <div className="field">
-              <label>Nro. cotización</label>
-              <input value={project.numero} onChange={(e) => setProject({ ...project, numero: e.target.value })} />
+        <ProjectSection
+          project={project}
+          setProject={setProject}
+          clients={clients}
+          applyClientInProject={applyClientInProject}
+          resetCotizacionActual={resetCotizacionActual}
+        />
+      )}
+      {activeTab === 'clientes' && (
+        <div className="grid" style={{ gap: 16 }}>
+          <section className="card">
+            <h2>{editingClientId ? 'Editar cliente' : 'Registrar cliente'}</h2>
+            <form className="grid" style={{ gap: 12 }} onSubmit={saveClient}>
+              <div className="grid grid-3">
+                <div className="field">
+                  <label>Cliente</label>
+                  <input
+                    value={clientForm.cliente}
+                    onChange={(e) => setClientForm({ ...clientForm, cliente: e.target.value })}
+                    placeholder="Nombre comercial"
+                  />
+                </div>
+                <div className="field">
+                  <label>Responsable</label>
+                  <input
+                    value={clientForm.responsable}
+                    onChange={(e) => setClientForm({ ...clientForm, responsable: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Teléfono</label>
+                  <input
+                    value={clientForm.telefono}
+                    onChange={(e) => setClientForm({ ...clientForm, telefono: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>NIT</label>
+                  <input
+                    value={clientForm.nit}
+                    onChange={(e) => setClientForm({ ...clientForm, nit: e.target.value })}
+                  />
+                </div>
+                <div className="field">
+                  <label>Razón social</label>
+                  <input
+                    value={clientForm.razonSocial}
+                    onChange={(e) => setClientForm({ ...clientForm, razonSocial: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="action-row">
+                <button className="btn" type="submit">
+                  {savingClient ? 'Guardando...' : editingClientId ? 'Guardar cambios' : 'Guardar cliente'}
+                </button>
+                {editingClientId && (
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={() => {
+                      setEditingClientId(null)
+                      setClientForm(initialClient)
+                    }}
+                  >
+                    Cancelar edicion
+                  </button>
+                )}
+              </div>
+            </form>
+          </section>
+          <section className="card">
+            <h2>Clientes guardados</h2>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Responsable</th>
+                    <th>Teléfono</th>
+                    <th>NIT</th>
+                    <th>Razón social</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {clients.length ? (
+                    clients.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.cliente || '-'}</td>
+                        <td>{row.responsable || '-'}</td>
+                        <td>{row.telefono || '-'}</td>
+                        <td>{row.nit || '-'}</td>
+                        <td>{row.razonSocial || '-'}</td>
+                        <td>
+                          <div className="action-row">
+                            <button
+                              type="button"
+                              className="mini-btn"
+                              onClick={() => {
+                                applyClientInProject(row)
+                                setActiveTab('proyecto')
+                              }}
+                            >
+                              Usar
+                            </button>
+                            <button type="button" className="mini-btn success" onClick={() => editClient(row)}>
+                              Editar
+                            </button>
+                            <button type="button" className="mini-btn danger" onClick={() => deleteClient(row.id)}>
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6} className="muted">Aún no hay clientes guardados.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-            <div className="field">
-              <label>Nombre del proyecto</label>
-              <input value={project.nombreProyecto} onChange={(e) => setProject({ ...project, nombreProyecto: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Empresa</label>
-              <input value={project.empresa} onChange={(e) => setProject({ ...project, empresa: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Responsable</label>
-              <input value={project.responsable} onChange={(e) => setProject({ ...project, responsable: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Fecha</label>
-              <input type="date" value={project.fecha} onChange={(e) => setProject({ ...project, fecha: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Válida hasta</label>
-              <input type="date" value={project.validoHasta} onChange={(e) => setProject({ ...project, validoHasta: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Moneda</label>
-              <select value={project.moneda} onChange={(e) => setProject({ ...project, moneda: e.target.value })}>
-                <option>BOB</option>
-                <option>USD</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Condiciones de pago</label>
-              <input value={project.condicionesPago} onChange={(e) => setProject({ ...project, condicionesPago: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Tiempo de entrega</label>
-              <input value={project.tiempoEntrega} onChange={(e) => setProject({ ...project, tiempoEntrega: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Modo de cotización</label>
-              <select value={project.modoCotizacion || 'total'} onChange={(e) => setProject({ ...project, modoCotizacion: e.target.value })}>
-                <option value="total">Suma total</option>
-                <option value="opciones">Opciones para elegir</option>
-              </select>
-            </div>
-          </div>
-          <div className="field" style={{ marginTop: 12 }}>
-            <label>Observaciones</label>
-            <textarea rows={4} value={project.observaciones} onChange={(e) => setProject({ ...project, observaciones: e.target.value })} />
-          </div>
-        </section>
+          </section>
+        </div>
       )}
       {activeTab === 'items' && (
         <div className="grid" style={{ gap: 16 }}>
@@ -1262,259 +1276,44 @@ export default function Page() {
         </div>
       )}
       {activeTab === 'recursos' && (
-        <div className="grid" style={{ gap: 16 }}>
-          <section className="card">
-            <h2>{editingResourceId ? 'Editar recurso' : 'Alta rápida de recurso'}</h2>
-            <form className="grid" style={{ gap: 12 }} onSubmit={saveResource}>
-              <div className="grid grid-2">
-                <div className="field">
-                  <label>Tipo</label>
-                  <select value={resourceForm.tipo} onChange={(e) => setResourceForm({ ...resourceForm, tipo: e.target.value })}>
-                    <option>Material</option>
-                    <option>Mano de obra</option>
-                    <option>Servicio</option>
-                    <option>Instalación</option>
-                    <option>Transporte</option>
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Categoría</label>
-                  <input value={resourceForm.categoria} onChange={(e) => setResourceForm({ ...resourceForm, categoria: e.target.value })} />
-                </div>
-              </div>
-              <div className="field">
-                <label>Nombre</label>
-                <input value={resourceForm.nombre} onChange={(e) => setResourceForm({ ...resourceForm, nombre: e.target.value })} />
-              </div>
-              <div className="field">
-                <label>Especificación</label>
-                <input value={resourceForm.especificacion} onChange={(e) => setResourceForm({ ...resourceForm, especificacion: e.target.value })} />
-              </div>
-              <div className="grid grid-3">
-                <div className="field">
-                  <label>Unidad</label>
-                  <input value={resourceForm.unidad} onChange={(e) => setResourceForm({ ...resourceForm, unidad: e.target.value })} />
-                </div>
-                <div className="field">
-                  <label>Proveedor</label>
-                  <input value={resourceForm.proveedor} onChange={(e) => setResourceForm({ ...resourceForm, proveedor: e.target.value })} />
-                </div>
-                <div className="field">
-                  <label>Costo base</label>
-                  <input type="number" value={resourceForm.costo} onChange={(e) => setResourceForm({ ...resourceForm, costo: e.target.value })} />
-                </div>
-              </div>
-              <div className="action-row">
-                <button className="btn" type="submit" disabled={savingResource}>
-                  {savingResource ? 'Guardando...' : editingResourceId ? 'Guardar cambios' : 'Guardar'}
-                </button>
-                {editingResourceId && (
-                  <button
-                    type="button"
-                    className="btn secondary"
-                    onClick={() => {
-                      setEditingResourceId(null)
-                      setResourceForm(initialResource)
-                    }}
-                  >
-                    Cancelar edición
-                  </button>
-                )}
-              </div>
-            </form>
-          </section>
-          <section className="card">
-            <h2>Recursos guardados</h2>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Tipo</th>
-                    <th>Nombre</th>
-                    <th>Proveedor</th>
-                    <th>Unidad</th>
-                    <th>Costo</th>
-                    <th>Acciones</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {resources.length ? (
-                    resources.map((row) => (
-                      <tr key={row.id}>
-                        <td>{row.tipo}</td>
-                        <td>
-                          <strong>{row.nombre}</strong>
-                          <div className="tiny-muted">{row.categoria} · {row.especificacion || '-'}</div>
-                        </td>
-                        <td>{row.proveedor || '-'}</td>
-                        <td>{row.unidad}</td>
-                        <td>{money(row.costo, 'BOB')}</td>
-                        <td>
-                          <div className="action-row">
-                            <button type="button" className="mini-btn" onClick={() => addResourceToDetail(row)}>
-                              Cargar
-                            </button>
-                            <button type="button" className="mini-btn success" onClick={() => editResource(row)}>
-                              Editar
-                            </button>
-                            <button type="button" className="mini-btn danger" onClick={() => deleteResource(row.id)}>
-                              Eliminar
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={6} className="muted">Aún no hay recursos guardados.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        </div>
+        <ResourcesSection
+          editingResourceId={editingResourceId}
+          resourceForm={resourceForm}
+          setResourceForm={setResourceForm}
+          saveResource={saveResource}
+          savingResource={savingResource}
+          setEditingResourceId={setEditingResourceId}
+          resources={resources}
+          money={money}
+          addResourceToDetail={addResourceToDetail}
+          editResource={editResource}
+          deleteResource={deleteResource}
+        />
       )}
       {activeTab === 'cotizacion' && (
-        <section className="card">
-          <div className="quote-head">
-            <div>
-              <img
-                src="/logo.png"
-                alt="DecoraZon"
-                className="quote-logo"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none'
-                }}
-              />
-              <h2 style={{ marginTop: 10 }}>{COMPANY.name}</h2>
-              <div className="muted">{COMPANY.address}</div>
-              <div className="muted">{COMPANY.phones.join(' / ')}</div>
-              <div className="muted">{COMPANY.email}</div>
-            </div>
-            <div className="quote-box">
-              <div><strong>Cotización:</strong> {project.numero || 'Sin número'}</div>
-              <div><strong>Proyecto:</strong> {project.nombreProyecto || '-'}</div>
-              <div><strong>Empresa:</strong> {project.empresa || '-'}</div>
-              <div><strong>Responsable:</strong> {project.responsable || '-'}</div>
-              <div><strong>Fecha:</strong> {formatDateDisplay(project.fecha)}</div>
-            </div>
-          </div>
-          <div className="table-wrap" style={{ marginTop: 18 }}>
-            <table>
-              <thead>
-                <tr>
-                  <th style={{ width: '10%' }}>Código</th>
-                  <th style={{ width: '18%' }}>Ítem</th>
-                  <th style={{ width: '32%' }}>Descripción del ítem</th>
-                  <th style={{ width: '12%', textAlign: 'right' }}>Subtotal</th>
-                  <th style={{ width: '10%', textAlign: 'right' }}>Desc.</th>
-                  <th style={{ width: '8%', textAlign: 'right' }}>Imp.</th>
-                  <th style={{ width: '10%', textAlign: 'right' }}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {itemRows.length ? (
-                  itemRows.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.codigo}</td>
-                      <td>
-                        <strong>{item.nombre}</strong>
-                      </td>
-                      <td>
-                        <div style={{ whiteSpace: 'pre-line' }}>{safeText(item.descripcion) || '-'}</div>
-                      </td>
-                      <td style={{ textAlign: 'right' }}>{money(item.subtotal, project.moneda)}</td>
-                      <td style={{ textAlign: 'right' }}>{item.descuento ? money(item.descuento, project.moneda) : '-'}</td>
-                      <td style={{ textAlign: 'right' }}>{item.aplicaImpuesto ? money(item.impuesto, project.moneda) : 'No'}</td>
-                      <td style={{ textAlign: 'right' }}><strong>{money(item.total, project.moneda)}</strong></td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={7} className="muted">Aún no hay cotización armada.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="quote-foot">
-            <div className="quote-box">
-              <strong>Condiciones</strong>
-              <div className="muted">Pago: {project.condicionesPago || '-'}</div>
-              <div className="muted">Entrega: {project.tiempoEntrega || '-'}</div>
-              <div className="muted">Observaciones: {project.observaciones || '-'}</div>
-              <div className="muted">Impuestos: {itemRows.some((item) => item.aplicaImpuesto) ? 'Según ítem' : 'No incluye'}</div>
-              {project.modoCotizacion === 'opciones' && (
-                <div className="muted">Los valores mostrados corresponden a opciones independientes. El cliente podrá elegir una alternativa.</div>
-              )}
-            </div>
-            {project.modoCotizacion !== 'opciones' && (
-              <div className="quote-box">
-                <strong>Total general</strong>
-                <div className="muted">Descuento total: {money(itemRows.reduce((acc, item) => acc + Number(item.descuento || 0), 0), project.moneda)}</div>
-                <div className="kpi" style={{ fontSize: 28 }}>{money(totalProyecto, project.moneda)}</div>
-              </div>
-            )}
-          </div>
-          <div className="action-row">
-            <button type="button" className="btn" onClick={saveProjectCloud} disabled={savingProject}>
-              {savingProject ? 'Guardando...' : editingProjectId ? 'Guardar cambios' : 'Guardar'}
-            </button>
-            <button type="button" className="btn secondary" onClick={downloadPdf}>
-              Imprimir / PDF
-            </button>
-          </div>
-        </section>
+        <QuoteSection
+          project={project}
+          itemRows={itemRows}
+          subtotalProyecto={subtotalProyecto}
+          descuentoGeneralPct={descuentoGeneralPct}
+          descuentoGeneralMonto={descuentoGeneralMonto}
+          totalProyecto={totalProyecto}
+          savingProject={savingProject}
+          editingProjectId={editingProjectId}
+          onSave={saveProjectCloud}
+          onDownloadPdf={downloadPdf}
+          money={money}
+          formatDateDisplay={formatDateDisplay}
+          safeText={safeText}
+        />
       )}
       {activeTab === 'historial' && (
-        <section className="card">
-          <h2>Historial compartido</h2>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Nro.</th>
-                  <th>Proyecto</th>
-                  <th>Empresa</th>
-                  <th>Responsable</th>
-                  <th>Fecha</th>
-                  <th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.length ? (
-                  history.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.numero}</td>
-                      <td>{row.nombreProyecto}</td>
-                      <td>{row.empresa || '-'}</td>
-                      <td>{row.responsable || '-'}</td>
-                      <td>{String(row.fecha || '-').slice(0, 10)}</td>
-                      <td>
-                        <div className="action-row">
-                          <button type="button" className="mini-btn" onClick={() => openProjectFromHistory(row)}>
-                            Abrir
-                          </button>
-                          <button type="button" className="mini-btn success" onClick={() => duplicateProjectFromHistory(row)}>
-                            Duplicar
-                          </button>
-                          <button type="button" className="mini-btn danger" onClick={() => deleteProjectFromHistory(row.id)}>
-                            Eliminar
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={6} className="muted">Aún no hay cotizaciones guardadas en la nube.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <HistorySection
+          history={history}
+          onOpen={openProjectFromHistory}
+          onDuplicate={duplicateProjectFromHistory}
+          onDelete={deleteProjectFromHistory}
+        />
       )}
       <style jsx global>{`
         :root {
@@ -1533,11 +1332,16 @@ export default function Page() {
         html, body {
           background: var(--dz-bg);
           color: var(--dz-ink);
+          width: 100%;
+          max-width: 100%;
+          overflow-x: hidden;
         }
         .page {
           max-width: 1600px;
           margin: 0 auto;
           padding: 8px 10px 28px;
+          width: 100%;
+          overflow-x: hidden;
         }
         .grid {
           display: grid;
@@ -1549,6 +1353,10 @@ export default function Page() {
         }
         .grid-3 {
           grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 18px;
+        }
+        .grid-4 {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
           gap: 18px;
         }
         .hero {
@@ -1622,7 +1430,7 @@ export default function Page() {
         }
         .tabs {
           display: grid;
-          grid-template-columns: repeat(7, minmax(0, 1fr));
+          grid-template-columns: repeat(9, minmax(0, 1fr));
           gap: 12px;
         }
         .tab-btn {
@@ -1765,6 +1573,8 @@ export default function Page() {
         }
         .table-wrap {
           overflow-x: auto;
+          max-width: 100%;
+          -webkit-overflow-scrolling: touch;
           border: 1px solid var(--dz-border);
           border-radius: 22px;
           background: white;
@@ -1858,6 +1668,14 @@ export default function Page() {
           .page {
             padding: 6px 6px 22px;
           }
+          .grid-3 {
+            grid-template-columns: 1fr;
+            gap: 12px;
+          }
+          .grid-4 {
+            grid-template-columns: 1fr;
+            gap: 12px;
+          }
           .hero {
             padding: 18px 18px 20px;
             border-radius: 24px;
@@ -1868,16 +1686,43 @@ export default function Page() {
           .hero h1 {
             font-size: 2.15rem;
           }
+          .hero-eyebrow {
+            letter-spacing: 0.12em;
+          }
+          .hero-subtitle,
+          .hero-meta {
+            overflow-wrap: anywhere;
+          }
           .hero-head {
             flex-direction: column;
             align-items: flex-start;
           }
           .tabs {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+          }
+          .tab-btn {
+            font-size: 0.95rem;
+            padding: 12px 10px;
+            border-radius: 14px;
           }
           .card {
             padding: 18px;
             border-radius: 22px;
+          }
+          table {
+            min-width: 0;
+          }
+          th, td {
+            padding: 10px 10px;
+            font-size: 0.9rem;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+          }
+          .mini-btn {
+            padding: 8px 10px;
+            font-size: 0.86rem;
           }
           h2 {
             font-size: 1.7rem;
@@ -1892,7 +1737,31 @@ export default function Page() {
             height: 64px;
           }
         }
+        @media (max-width: 520px) {
+          .tabs {
+            grid-template-columns: 1fr;
+          }
+          table {
+            min-width: 0;
+          }
+          h2 {
+            font-size: 1.45rem;
+          }
+          input, select, textarea {
+            padding: 12px 12px;
+          }
+          .action-row {
+            gap: 8px;
+          }
+        }
       `}</style>
     </main>
   )
 }
+
+
+
+
+
+
+
