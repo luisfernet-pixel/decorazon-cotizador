@@ -1324,13 +1324,13 @@ export default function Page() {
           --dz-red: ${BRAND.red};
           --dz-ink: ${BRAND.ink};
           --dz-border: ${BRAND.border};
-          --dz-bg: ${BRAND.bg};
+          --dz-bg: #114f68;
           --dz-card: #ffffff;
           --dz-muted: #62748a;
           --dz-shadow: 0 12px 30px rgba(17, 106, 113, 0.08);
         }
         html, body {
-          background: var(--dz-bg);
+          background: linear-gradient(135deg, var(--dz-green-deep) 0%, var(--dz-green-dark) 45%, var(--dz-green) 100%);
           color: var(--dz-ink);
           width: 100%;
           max-width: 100%;
@@ -1458,8 +1458,8 @@ export default function Page() {
           box-shadow: 0 10px 22px rgba(17,106,113,0.22);
         }
         .card {
-          background: var(--dz-card);
-          border: 1px solid var(--dz-border);
+          background: linear-gradient(135deg, rgba(19, 95, 122, 0.95) 0%, rgba(23, 127, 152, 0.92) 58%, rgba(52, 176, 198, 0.9) 100%);
+          border: 1px solid rgba(171, 231, 240, 0.38);
           border-radius: 26px;
           padding: 20px 22px;
           box-shadow: 0 10px 26px rgba(15, 23, 42, 0.035);
@@ -1468,32 +1468,32 @@ export default function Page() {
           margin: 0 0 18px;
           font-size: 2rem;
           line-height: 1.05;
-          color: var(--dz-ink);
+          color: #ffffff;
         }
         .field {
           display: grid;
           gap: 8px;
         }
         .field label {
-          color: var(--dz-muted);
+          color: rgba(255, 255, 255, 0.88);
           font-size: 0.96rem;
           font-weight: 700;
         }
         input, select, textarea {
           width: 100%;
-          border: 1px solid var(--dz-border);
+          border: 1px solid rgba(171, 231, 240, 0.34);
           border-radius: 16px;
           padding: 14px 16px;
-          background: #fff;
-          color: var(--dz-ink);
+          background: rgba(16, 86, 105, 0.72);
+          color: #ffffff;
           font-size: 1rem;
           outline: none;
           transition: border-color .16s ease, box-shadow .16s ease;
           box-sizing: border-box;
         }
         input:focus, select:focus, textarea:focus {
-          border-color: rgba(17, 106, 113, 0.5);
-          box-shadow: 0 0 0 4px rgba(31,154,173,0.12);
+          border-color: rgba(171, 231, 240, 0.56);
+          box-shadow: 0 0 0 4px rgba(52,176,198,0.2);
         }
         textarea {
           resize: vertical;
@@ -1518,10 +1518,10 @@ export default function Page() {
           filter: brightness(0.98);
         }
         .btn.secondary {
-          background: #eef3f7;
-          color: var(--dz-ink);
+          background: rgba(17, 86, 104, 0.7);
+          color: #fff;
           box-shadow: none;
-          border: 1px solid var(--dz-border);
+          border: 1px solid rgba(171, 231, 240, 0.34);
         }
         .btn.success {
           background: linear-gradient(135deg, var(--dz-green), var(--dz-green-dark));
@@ -1530,18 +1530,18 @@ export default function Page() {
           box-shadow: 0 10px 22px rgba(17,106,113,0.18);
         }
         .mini-btn {
-          background: #eef3f7;
-          color: var(--dz-ink);
+          background: rgba(17, 86, 104, 0.7);
+          color: #fff;
           font-weight: 800;
           border-radius: 13px;
           padding: 9px 14px;
           box-shadow: none;
-          border: 1px solid var(--dz-border);
+          border: 1px solid rgba(171, 231, 240, 0.34);
         }
         .mini-btn:hover,
         .btn.secondary:hover {
-          border-color: rgba(17, 106, 113, 0.28);
-          background: #f4f7fa;
+          border-color: rgba(171, 231, 240, 0.54);
+          background: rgba(26, 108, 130, 0.76);
         }
         .mini-btn.success {
           background: linear-gradient(135deg, var(--dz-green), var(--dz-green-dark));
@@ -1566,7 +1566,7 @@ export default function Page() {
         }
         .muted,
         .tiny-muted {
-          color: var(--dz-muted);
+          color: rgba(232, 245, 248, 0.86);
         }
         .tiny-muted {
           font-size: .88rem;
@@ -1575,33 +1575,34 @@ export default function Page() {
           overflow-x: auto;
           max-width: 100%;
           -webkit-overflow-scrolling: touch;
-          border: 1px solid var(--dz-border);
+          border: 1px solid rgba(171, 231, 240, 0.34);
           border-radius: 22px;
-          background: white;
+          background: rgba(10, 79, 95, 0.72);
         }
         table {
           width: 100%;
           border-collapse: collapse;
           min-width: 720px;
-          background: white;
+          background: transparent;
         }
         th {
           text-align: left;
-          color: var(--dz-muted);
+          color: #e9fbff;
           font-size: .92rem;
           letter-spacing: .02em;
           text-transform: uppercase;
-          background: #fbfdfe;
+          background: rgba(255, 255, 255, 0.12);
           padding: 14px 14px;
-          border-bottom: 1px solid var(--dz-border);
+          border-bottom: 1px solid rgba(171, 231, 240, 0.3);
         }
         td {
           padding: 14px 14px;
-          border-bottom: 1px solid var(--dz-border);
+          border-bottom: 1px solid rgba(171, 231, 240, 0.24);
+          color: #ffffff;
           vertical-align: top;
         }
         tbody tr:hover {
-          background: rgba(31,154,173,0.035);
+          background: rgba(255, 255, 255, 0.08);
         }
         .quote-head,
         .quote-foot {
@@ -1613,8 +1614,8 @@ export default function Page() {
           align-items: start;
         }
         .quote-box {
-          background: #fbfdfe;
-          border: 1px solid var(--dz-border);
+          background: rgba(10, 79, 95, 0.68);
+          border: 1px solid rgba(171, 231, 240, 0.32);
           border-radius: 22px;
           padding: 18px 20px;
         }
@@ -1631,7 +1632,7 @@ export default function Page() {
           display: flex;
           align-items: center;
           gap: 10px;
-          color: var(--dz-ink);
+          color: #ffffff;
           font-weight: 600;
         }
         .check-row input {
@@ -1642,14 +1643,14 @@ export default function Page() {
         .kpi {
           font-size: 2rem;
           font-weight: 900;
-          color: var(--dz-ink);
+          color: #ffffff;
         }
         .badge {
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          background: var(--dz-green-soft);
-          color: var(--dz-green-dark);
+          background: rgba(171, 231, 240, 0.2);
+          color: #e9fbff;
           border-radius: 999px;
           padding: 8px 12px;
           font-size: .82rem;

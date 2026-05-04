@@ -207,7 +207,7 @@ export default function HomeSection({
 
       <style jsx>{`
         .home-shell {
-          background: linear-gradient(160deg, var(--dz-green-deep), var(--dz-green-dark));
+          background: linear-gradient(135deg, var(--dz-green-deep) 0%, var(--dz-green-dark) 45%, var(--dz-green) 100%);
           border-radius: 28px;
           padding: 18px;
           box-shadow: 0 18px 32px rgba(9, 69, 74, 0.28);
@@ -217,8 +217,8 @@ export default function HomeSection({
           gap: 16px;
         }
         .dash-block {
-          background: rgba(255, 255, 255, 0.08);
-          border: 1px solid rgba(255, 255, 255, 0.26);
+          background: linear-gradient(135deg, rgba(19, 95, 122, 0.9) 0%, rgba(23, 127, 152, 0.82) 58%, rgba(52, 176, 198, 0.76) 100%);
+          border: 1px solid rgba(171, 231, 240, 0.35);
           border-radius: 24px;
           padding: 18px 20px;
           backdrop-filter: blur(1px);
@@ -233,8 +233,8 @@ export default function HomeSection({
           font-size: 0.98rem;
         }
         .stat-card {
-          background: rgba(255, 255, 255, 0.14);
-          border: 1px solid rgba(255, 255, 255, 0.3);
+          background: rgba(10, 79, 95, 0.34);
+          border: 1px solid rgba(171, 231, 240, 0.36);
           border-radius: 16px;
           padding: 12px 14px;
         }
@@ -265,8 +265,8 @@ export default function HomeSection({
           font-size: 0.88rem;
         }
         .dash-table {
-          border: 1px solid rgba(255, 255, 255, 0.34);
-          background: rgba(11, 70, 76, 0.72);
+          border: 1px solid rgba(171, 231, 240, 0.36);
+          background: rgba(10, 79, 95, 0.68);
         }
         .dash-table :global(table) {
           background: transparent !important;
