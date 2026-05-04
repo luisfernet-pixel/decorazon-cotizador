@@ -288,6 +288,7 @@ export default function HomeSection({
           color: #fff;
         }
         .dash-bottom-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           align-items: stretch;
         }
         .dash-bottom-card {
@@ -300,12 +301,18 @@ export default function HomeSection({
         }
         .dash-bottom-card .dash-table :global(table) {
           table-layout: fixed;
+          min-width: 0;
         }
         .dash-bottom-card .dash-table :global(th),
         .dash-bottom-card .dash-table :global(td) {
           white-space: normal;
           overflow-wrap: anywhere;
           word-break: break-word;
+        }
+        @media (max-width: 1200px) {
+          .dash-bottom-grid {
+            grid-template-columns: 1fr;
+          }
         }
         .empty-note {
           color: rgba(255, 255, 255, 0.88);
