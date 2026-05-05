@@ -888,7 +888,7 @@ export default function Page() {
   }
   const showDashboardHeader = activeTab !== 'cotizacion'
   return (
-    <main className="page grid" style={{ gap: 20 }}>
+    <main className="page grid cotizador-theme" style={{ gap: 20 }}>
       {toastMessage ? <div className="toast-notice">{toastMessage}</div> : null}
       {showDashboardHeader && (
         <DashboardHero rubro={COMPANY_RUBRO} infoLine={companyInfoLine} />
@@ -1464,7 +1464,7 @@ export default function Page() {
           padding: 20px 22px;
           box-shadow: 0 10px 26px rgba(15, 23, 42, 0.035);
         }
-        h2 {
+        .cotizador-theme h2 {
           margin: 0 0 18px;
           font-size: 2rem;
           line-height: 1.05;
@@ -1479,23 +1479,48 @@ export default function Page() {
           font-size: 0.96rem;
           font-weight: 700;
         }
-        input, select, textarea {
+        .cotizador-theme input, .cotizador-theme select, .cotizador-theme textarea {
           width: 100%;
           border: 1px solid rgba(171, 231, 240, 0.34);
           border-radius: 16px;
           padding: 14px 16px;
-          background: rgba(16, 86, 105, 0.72);
-          color: #ffffff;
+          background: #ffffff !important;
+          color: #0f172a !important;
+          -webkit-text-fill-color: #0f172a !important;
+          caret-color: #0f172a !important;
           font-size: 1rem;
           outline: none;
           transition: border-color .16s ease, box-shadow .16s ease;
           box-sizing: border-box;
         }
-        input:focus, select:focus, textarea:focus {
+        .cotizador-theme input::placeholder,
+        .cotizador-theme textarea::placeholder {
+          color: #64748b !important;
+          opacity: 1;
+        }
+        .cotizador-theme select option {
+          color: #163545;
+          background: #ffffff;
+        }
+        .cotizador-theme input:-webkit-autofill,
+        .cotizador-theme input:-webkit-autofill:hover,
+        .cotizador-theme input:-webkit-autofill:focus,
+        .cotizador-theme textarea:-webkit-autofill,
+        .cotizador-theme textarea:-webkit-autofill:hover,
+        .cotizador-theme textarea:-webkit-autofill:focus,
+        .cotizador-theme select:-webkit-autofill,
+        .cotizador-theme select:-webkit-autofill:hover,
+        .cotizador-theme select:-webkit-autofill:focus {
+          -webkit-text-fill-color: #0f172a !important;
+          caret-color: #0f172a !important;
+          box-shadow: 0 0 0px 1000px #ffffff inset !important;
+          transition: background-color 9999s ease-out 0s;
+        }
+        .cotizador-theme input:focus, .cotizador-theme select:focus, .cotizador-theme textarea:focus {
           border-color: rgba(171, 231, 240, 0.56);
           box-shadow: 0 0 0 4px rgba(52,176,198,0.2);
         }
-        textarea {
+        .cotizador-theme textarea {
           resize: vertical;
           min-height: 110px;
         }
@@ -1585,7 +1610,7 @@ export default function Page() {
           min-width: 720px;
           background: transparent;
         }
-        th {
+        .cotizador-theme th {
           text-align: left;
           color: #e9fbff;
           font-size: .92rem;
@@ -1595,7 +1620,7 @@ export default function Page() {
           padding: 14px 14px;
           border-bottom: 1px solid rgba(171, 231, 240, 0.3);
         }
-        td {
+        .cotizador-theme td {
           padding: 14px 14px;
           border-bottom: 1px solid rgba(171, 231, 240, 0.24);
           color: #ffffff;
@@ -1714,7 +1739,7 @@ export default function Page() {
           table {
             min-width: 0;
           }
-          th, td {
+          .cotizador-theme th, .cotizador-theme td {
             padding: 10px 10px;
             font-size: 0.9rem;
             white-space: normal;
@@ -1725,7 +1750,7 @@ export default function Page() {
             padding: 8px 10px;
             font-size: 0.86rem;
           }
-          h2 {
+          .cotizador-theme h2 {
             font-size: 1.7rem;
           }
           .hero-logo-wrap {
@@ -1745,10 +1770,10 @@ export default function Page() {
           table {
             min-width: 0;
           }
-          h2 {
+          .cotizador-theme h2 {
             font-size: 1.45rem;
           }
-          input, select, textarea {
+          .cotizador-theme input, .cotizador-theme select, .cotizador-theme textarea {
             padding: 12px 12px;
           }
           .action-row {
