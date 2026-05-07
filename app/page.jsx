@@ -170,7 +170,12 @@ export default function Page() {
       const related = detailsByItemId[item.id] || []
       const cantidadItem = Math.max(1, Number(item.cantidad || 1))
       const costoUnitarioItem = related.reduce((acc, row) => {
-        return acc + (Number(row.cantidad || 0) * Number(row.costoUnitario || 0))
+        const cantidad = Number(row.cantidad || 0)
+        const precioUnitario = Number(row.costoUnitario || 0)
+        const utilidadPct = Number(row.tasaUtilidad || 0)
+        const subtotal = cantidad * precioUnitario
+        const ganancia = subtotal * (utilidadPct / 100)
+        return acc + (subtotal + ganancia)
       }, 0)
       const impuestoUnitario = item.aplicaImpuesto
         ? costoUnitarioItem * (Number(item.tasaImpuesto || 0) / 100)
@@ -1143,7 +1148,7 @@ export default function Page() {
                         </td>
                         <td>{item.descuentoPct ? `${item.descuentoPct}%` : '-'}</td>
                         <td>{item.aplicaImpuesto ? `${item.tasaImpuesto}%` : 'No incluye'}</td>
-                        <td>{money(item.total, project.moneda)}</td>
+                        <td>{money(item.subtotal, project.moneda)}</td>
                         <td>
                           <div className="action-row">
                             <button type="button" className="mini-btn success" onClick={() => editItem(item)}>
