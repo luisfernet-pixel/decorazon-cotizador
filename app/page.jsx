@@ -1332,14 +1332,14 @@ export default function Page() {
                       }, 0)
                       return (
                         <tr>
-                          <td style={{ textAlign: 'right', fontWeight: 800, color: '#b8f3ff' }}>Totales</td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, color: '#b8f3ff' }}>Totales</td>
                           <td />
                           <td />
-                          <td style={{ fontWeight: 800, color: '#b8f3ff' }}>{money(sumPrecioUnit, project.moneda)}</td>
-                          <td style={{ fontWeight: 800, color: '#b8f3ff' }}>{money(sumSubtotal, project.moneda)}</td>
+                          <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(sumPrecioUnit, project.moneda)}</td>
+                          <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(sumSubtotal, project.moneda)}</td>
                           <td />
-                          <td style={{ fontWeight: 800, color: '#b8f3ff' }}>{money(sumGanancia, project.moneda)}</td>
-                          <td style={{ fontWeight: 800, color: '#b8f3ff' }}>{money(sumTotal, project.moneda)}</td>
+                          <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(sumGanancia, project.moneda)}</td>
+                          <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(sumTotal, project.moneda)}</td>
                           <td />
                         </tr>
                       )
