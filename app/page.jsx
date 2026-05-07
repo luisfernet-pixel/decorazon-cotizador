@@ -170,9 +170,7 @@ export default function Page() {
       const related = detailsByItemId[item.id] || []
       const cantidadItem = Math.max(1, Number(item.cantidad || 1))
       const costoUnitarioItem = related.reduce((acc, row) => {
-        const base = Number(row.cantidad || 0) * Number(row.costoUnitario || 0)
-        const total = base * (1 + Number(row.tasaUtilidad || 0) / 100)
-        return acc + total
+        return acc + (Number(row.cantidad || 0) * Number(row.costoUnitario || 0))
       }, 0)
       const impuestoUnitario = item.aplicaImpuesto
         ? costoUnitarioItem * (Number(item.tasaImpuesto || 0) / 100)
@@ -1268,8 +1266,7 @@ export default function Page() {
                   {details.length ? (
                     details.map((row) => {
                       const item = items.find((x) => x.id === row.itemId)
-                      const base = Number(row.cantidad || 0) * Number(row.costoUnitario || 0)
-                      const total = base * (1 + Number(row.tasaUtilidad || 0) / 100)
+                      const total = Number(row.cantidad || 0) * Number(row.costoUnitario || 0)
                       return (
                         <tr key={row.id}>
                           <td>{item?.codigo || '-'}</td>
