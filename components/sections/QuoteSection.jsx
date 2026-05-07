@@ -73,23 +73,23 @@ export default function QuoteSection({
       </div>
       <div className="quote-foot">
         <div className="quote-box">
-          <strong>Condiciones</strong>
-          <div className="muted">Pago: {project.condicionesPago || '-'}</div>
-          <div className="muted">Entrega: {project.tiempoEntrega || '-'}</div>
-          <div className="muted">Observaciones: {project.observaciones || '-'}</div>
-          <div className="muted">
+          <strong style={{ color: '#e9fbff' }}>Condiciones</strong>
+          <div className="muted" style={{ color: '#e9fbff' }}>Pago: {project.condicionesPago || '-'}</div>
+          <div className="muted" style={{ color: '#e9fbff' }}>Entrega: {project.tiempoEntrega || '-'}</div>
+          <div className="muted" style={{ color: '#e9fbff' }}>Observaciones: {project.observaciones || '-'}</div>
+          <div className="muted" style={{ color: '#e9fbff' }}>
             {itemRows.some((item) => item.aplicaImpuesto) ? 'La cotización incluye impuestos de ley.' : 'La cotización no incluye impuestos de ley.'}
           </div>
           {project.modoCotizacion === 'opciones' && (
-            <div className="muted">Los valores mostrados corresponden a opciones independientes. El cliente podra elegir una alternativa.</div>
+            <div className="muted" style={{ color: '#e9fbff' }}>Los valores mostrados corresponden a opciones independientes. El cliente podra elegir una alternativa.</div>
           )}
         </div>
         {project.modoCotizacion !== 'opciones' && (
           <div className="quote-box">
-            <strong>Total general</strong>
-            <div className="muted">Total: {money(subtotalProyecto, project.moneda)}</div>
-            <div className="muted">Descuento ({Number(descuentoGeneralPct || 0)}%): {money(descuentoGeneralMonto, project.moneda)}</div>
-            <div className="kpi" style={{ fontSize: 28 }}>{money(totalProyecto, project.moneda)}</div>
+            <strong style={{ color: '#e9fbff', fontSize: '1.5rem' }}>Total general</strong>
+            <div className="muted" style={{ color: '#e9fbff' }}>Total: {money(subtotalProyecto, project.moneda)}</div>
+            <div className="muted" style={{ color: '#e9fbff' }}>Descuento ({Number(descuentoGeneralPct || 0)}%): {money(descuentoGeneralMonto, project.moneda)}</div>
+            <div className="kpi" style={{ fontSize: 42, color: '#ffffff' }}>{money(totalProyecto, project.moneda)}</div>
           </div>
         )}
       </div>

@@ -109,6 +109,7 @@ export default function Page() {
         observaciones: parsedNotes.observaciones,
         modoCotizacion: parsedNotes.modoCotizacion,
         descuentoGeneralPct: Number(parsedNotes.descuentoGeneralPct || 0),
+        itemQuantities: parsedNotes.itemQuantities || {},
         validoHasta: row.valid_until || '',
       }
     })
@@ -167,15 +168,22 @@ export default function Page() {
   const itemRows = useMemo(() => {
     return items.map((item) => {
       const related = detailsByItemId[item.id] || []
-      const cantidad = related.reduce((acc, row) => acc + Number(row.cantidad || 0), 0)
-      const subtotal = related.reduce((acc, row) => {
+      const cantidadItem = Math.max(1, Number(item.cantidad || 1))
+      const costoUnitarioItem = related.reduce((acc, row) => {
         const base = Number(row.cantidad || 0) * Number(row.costoUnitario || 0)
         const total = base * (1 + Number(row.tasaUtilidad || 0) / 100)
         return acc + total
       }, 0)
-      const precioUnitario = cantidad > 0 ? subtotal / cantidad : 0
+      const subtotal = costoUnitarioItem * cantidadItem
       const impuesto = item.aplicaImpuesto ? subtotal * (Number(item.tasaImpuesto || 0) / 100) : 0
-      return { ...item, cantidad, precioUnitario, subtotal, impuesto, total: subtotal + impuesto }
+      return {
+        ...item,
+        cantidad: cantidadItem,
+        precioUnitario: costoUnitarioItem,
+        subtotal,
+        impuesto,
+        total: subtotal + impuesto,
+      }
     })
   }, [items, detailsByItemId])
   const subtotalProyecto = itemRows.reduce((acc, row) => acc + row.total, 0)
@@ -592,6 +600,7 @@ export default function Page() {
                 nombre: itemForm.nombre.trim(),
                 categoria: itemForm.categoria.trim() || 'General',
                 descripcion: itemForm.descripcion.trim(),
+                cantidad: Math.max(1, Number(itemForm.cantidad || 1)),
                 aplicaImpuesto: itemForm.aplicaImpuesto,
                 tasaImpuesto: Number(itemForm.tasaImpuesto || 0),
                 descuentoEspecial: Number(itemForm.descuentoEspecial || 0),
@@ -609,6 +618,7 @@ export default function Page() {
           nombre: itemForm.nombre.trim(),
           categoria: itemForm.categoria.trim() || 'General',
           descripcion: itemForm.descripcion.trim(),
+          cantidad: Math.max(1, Number(itemForm.cantidad || 1)),
           aplicaImpuesto: itemForm.aplicaImpuesto,
           tasaImpuesto: Number(itemForm.tasaImpuesto || 0),
           descuentoEspecial: Number(itemForm.descuentoEspecial || 0),
@@ -625,6 +635,7 @@ export default function Page() {
       nombre: item.nombre,
       categoria: item.categoria,
       descripcion: item.descripcion,
+      cantidad: Math.max(1, Number(item.cantidad || 1)),
       aplicaImpuesto: item.aplicaImpuesto,
       tasaImpuesto: item.tasaImpuesto,
       descuentoEspecial: Number(item.descuentoEspecial || 0),
@@ -722,7 +733,7 @@ export default function Page() {
           currency: project.moneda,
           payment_terms: project.condicionesPago,
           delivery_time: project.tiempoEntrega,
-          notes: serializeProjectNotes(project),
+          notes: serializeProjectNotes(project, items),
         })
         .eq('id', editingProjectId)
       if (error) {
@@ -749,7 +760,7 @@ export default function Page() {
           currency: project.moneda,
           payment_terms: project.condicionesPago,
           delivery_time: project.tiempoEntrega,
-          notes: serializeProjectNotes(project),
+          notes: serializeProjectNotes(project, items),
         }])
         .select()
         .single()
@@ -840,12 +851,16 @@ export default function Page() {
       modoCotizacion: row.modoCotizacion === 'opciones' ? 'opciones' : 'total',
       descuentoGeneralPct: Number(row.descuentoGeneralPct || 0),
     })
+    const itemQuantities = row.itemQuantities && typeof row.itemQuantities === 'object'
+      ? row.itemQuantities
+      : {}
     setItems((itemsRes.data || []).map((i) => ({
       id: i.id,
       codigo: i.code || '',
       nombre: i.name || '',
       categoria: i.category || '',
       descripcion: i.description || '',
+      cantidad: Math.max(1, Number(itemQuantities[`${String(i.code || '').trim()}||${String(i.name || '').trim()}`] || 1)),
       aplicaImpuesto: !!i.apply_tax,
       tasaImpuesto: Number(i.tax_rate || 0),
       descuentoEspecial: Number(i.discount_pct || 0),
@@ -1053,6 +1068,10 @@ export default function Page() {
                   <input value={itemForm.categoria} onChange={(e) => setItemForm({ ...itemForm, categoria: e.target.value })} />
                 </div>
                 <div className="field">
+                  <label>Cantidad de ítems</label>
+                  <input type="number" min="1" step="1" value={itemForm.cantidad} onChange={(e) => setItemForm({ ...itemForm, cantidad: e.target.value })} />
+                </div>
+                <div className="field">
                   <label>Impuesto del ítem (%)</label>
                   <input type="number" value={itemForm.tasaImpuesto} onChange={(e) => setItemForm({ ...itemForm, tasaImpuesto: e.target.value })} />
                 </div>
@@ -1100,6 +1119,7 @@ export default function Page() {
                   <tr>
                     <th>Código</th>
                     <th>Ítem</th>
+                    <th style={{ textAlign: 'right' }}>Cantidad</th>
                     <th>Desc.</th>
                     <th>Impuesto</th>
                     <th>Total</th>
@@ -1114,6 +1134,9 @@ export default function Page() {
                         <td>
                           <strong>{item.nombre}</strong>
                           <div className="tiny-muted">{item.categoria}</div>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          {Number(item.cantidad || 1).toLocaleString('es-BO')}
                         </td>
                         <td>{item.descuentoPct ? `${item.descuentoPct}%` : '-'}</td>
                         <td>{item.aplicaImpuesto ? `${item.tasaImpuesto}%` : 'No incluye'}</td>
@@ -1135,7 +1158,7 @@ export default function Page() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={6} className="muted">Aún no agregaste ítems.</td>
+                      <td colSpan={7} className="muted">Aún no agregaste ítems.</td>
                     </tr>
                   )}
                 </tbody>
