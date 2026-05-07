@@ -1258,6 +1258,9 @@ export default function Page() {
                     <th>Ítem</th>
                     <th>Descripción</th>
                     <th>Cantidad</th>
+                    <th>Costo</th>
+                    <th>Utilidad</th>
+                    <th>Total unitario</th>
                     <th>Total</th>
                     <th>Acciones</th>
                   </tr>
@@ -1266,7 +1269,11 @@ export default function Page() {
                   {details.length ? (
                     details.map((row) => {
                       const item = items.find((x) => x.id === row.itemId)
-                      const total = Number(row.cantidad || 0) * Number(row.costoUnitario || 0)
+                      const cantidad = Number(row.cantidad || 0)
+                      const costo = Number(row.costoUnitario || 0)
+                      const utilidadPct = Number(row.tasaUtilidad || 0)
+                      const totalUnitario = costo * (1 + utilidadPct / 100)
+                      const total = cantidad * totalUnitario
                       return (
                         <tr key={row.id}>
                           <td>{item?.codigo || '-'}</td>
@@ -1274,7 +1281,10 @@ export default function Page() {
                             <strong>{row.descripcion}</strong>
                             <div className="tiny-muted">{row.proveedor || '-'} · {row.tipo}</div>
                           </td>
-                          <td>{row.cantidad} {row.unidad}</td>
+                          <td>{cantidad} {row.unidad}</td>
+                          <td>{money(costo, project.moneda)}</td>
+                          <td>{utilidadPct}%</td>
+                          <td>{money(totalUnitario, project.moneda)}</td>
                           <td>{money(total, project.moneda)}</td>
                           <td>
                             <div className="action-row">
@@ -1291,7 +1301,7 @@ export default function Page() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={5} className="muted">Aún no agregaste subítems.</td>
+                      <td colSpan={8} className="muted">Aún no agregaste subítems.</td>
                     </tr>
                   )}
                 </tbody>
