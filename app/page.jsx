@@ -174,12 +174,17 @@ export default function Page() {
         const total = base * (1 + Number(row.tasaUtilidad || 0) / 100)
         return acc + total
       }, 0)
+      const impuestoUnitario = item.aplicaImpuesto
+        ? costoUnitarioItem * (Number(item.tasaImpuesto || 0) / 100)
+        : 0
+      const precioUnitario = costoUnitarioItem + impuestoUnitario
       const subtotal = costoUnitarioItem * cantidadItem
-      const impuesto = item.aplicaImpuesto ? subtotal * (Number(item.tasaImpuesto || 0) / 100) : 0
+      const impuesto = impuestoUnitario * cantidadItem
       return {
         ...item,
         cantidad: cantidadItem,
-        precioUnitario: costoUnitarioItem,
+        precioUnitario,
+        precioUnitarioSinImpuesto: costoUnitarioItem,
         subtotal,
         impuesto,
         total: subtotal + impuesto,

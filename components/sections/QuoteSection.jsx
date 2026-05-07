@@ -1,4 +1,4 @@
-import Image from 'next/image'
+﻿import Image from 'next/image'
 import { COMPANY } from '@/lib/company'
 
 export default function QuoteSection({
@@ -27,14 +27,14 @@ export default function QuoteSection({
           <div className="muted">{COMPANY.email}</div>
         </div>
         <div className="quote-box">
-          <div><strong>Cotización:</strong> {project.numero || 'Sin número'}</div>
-          <div><strong>Proyecto:</strong> {project.nombreProyecto || '-'}</div>
-          <div><strong>Cliente:</strong> {project.cliente || '-'}</div>
-          <div><strong>Razón social:</strong> {project.razonSocial || project.empresa || '-'}</div>
-          <div><strong>Responsable:</strong> {project.responsable || '-'}</div>
-          <div><strong>Teléfono:</strong> {project.telefono || '-'}</div>
-          <div><strong>NIT:</strong> {project.nit || '-'}</div>
-          <div><strong>Fecha:</strong> {formatDateDisplay(project.fecha)}</div>
+          <div style={{ color: '#e9fbff' }}><strong style={{ color: '#ffffff' }}>Cotización:</strong> {project.numero || 'Sin número'}</div>
+          <div style={{ color: '#e9fbff' }}><strong style={{ color: '#ffffff' }}>Proyecto:</strong> {project.nombreProyecto || '-'}</div>
+          <div style={{ color: '#e9fbff' }}><strong style={{ color: '#ffffff' }}>Cliente:</strong> {project.cliente || '-'}</div>
+          <div style={{ color: '#e9fbff' }}><strong style={{ color: '#ffffff' }}>Razón social:</strong> {project.razonSocial || project.empresa || '-'}</div>
+          <div style={{ color: '#e9fbff' }}><strong style={{ color: '#ffffff' }}>Responsable:</strong> {project.responsable || '-'}</div>
+          <div style={{ color: '#e9fbff' }}><strong style={{ color: '#ffffff' }}>Teléfono:</strong> {project.telefono || '-'}</div>
+          <div style={{ color: '#e9fbff' }}><strong style={{ color: '#ffffff' }}>NIT:</strong> {project.nit || '-'}</div>
+          <div style={{ color: '#e9fbff' }}><strong style={{ color: '#ffffff' }}>Fecha:</strong> {formatDateDisplay(project.fecha)}</div>
         </div>
       </div>
       <div className="table-wrap" style={{ marginTop: 18 }}>
@@ -72,24 +72,24 @@ export default function QuoteSection({
         </table>
       </div>
       <div className="quote-foot">
-        <div className="quote-box" style={{ background: '#f8fafc', color: '#0f172a', borderColor: '#cbd5e1' }}>
-          <strong style={{ color: '#0f172a' }}>Condiciones</strong>
-          <div className="muted" style={{ color: '#334155' }}>Pago: {project.condicionesPago || '-'}</div>
-          <div className="muted" style={{ color: '#334155' }}>Entrega: {project.tiempoEntrega || '-'}</div>
-          <div className="muted" style={{ color: '#334155' }}>Observaciones: {project.observaciones || '-'}</div>
-          <div className="muted" style={{ color: '#334155' }}>
+        <div className="quote-box">
+          <strong style={{ color: '#ffffff' }}>Condiciones</strong>
+          <div className="muted" style={{ color: '#e9fbff' }}>Pago: {project.condicionesPago || '-'}</div>
+          <div className="muted" style={{ color: '#e9fbff' }}>Entrega: {project.tiempoEntrega || '-'}</div>
+          <div className="muted" style={{ color: '#e9fbff' }}>Observaciones: {project.observaciones || '-'}</div>
+          <div className="muted" style={{ color: '#e9fbff' }}>
             {itemRows.some((item) => item.aplicaImpuesto) ? 'La cotización incluye impuestos de ley.' : 'La cotización no incluye impuestos de ley.'}
           </div>
           {project.modoCotizacion === 'opciones' && (
-            <div className="muted" style={{ color: '#334155' }}>Los valores mostrados corresponden a opciones independientes. El cliente podra elegir una alternativa.</div>
+            <div className="muted" style={{ color: '#e9fbff' }}>Los valores mostrados corresponden a opciones independientes. El cliente podra elegir una alternativa.</div>
           )}
         </div>
         {project.modoCotizacion !== 'opciones' && (
-          <div className="quote-box" style={{ background: '#f8fafc', color: '#0f172a', borderColor: '#cbd5e1' }}>
-            <strong style={{ color: '#0f172a', fontSize: '1.5rem' }}>Total general</strong>
-            <div className="muted" style={{ color: '#334155' }}>Total: {money(subtotalProyecto, project.moneda)}</div>
-            <div className="muted" style={{ color: '#334155' }}>Descuento ({Number(descuentoGeneralPct || 0)}%): {money(descuentoGeneralMonto, project.moneda)}</div>
-            <div className="kpi" style={{ fontSize: 42, color: '#0f172a' }}>{money(totalProyecto, project.moneda)}</div>
+          <div className="quote-box">
+            <strong style={{ color: '#ffffff', fontSize: '1.5rem' }}>Total general</strong>
+            <div className="muted" style={{ color: '#e9fbff' }}>Total: {money(subtotalProyecto, project.moneda)}</div>
+            <div className="muted" style={{ color: '#e9fbff' }}>Descuento ({Number(descuentoGeneralPct || 0)}%): {money(descuentoGeneralMonto, project.moneda)}</div>
+            <div className="kpi" style={{ fontSize: 42, color: '#ffffff' }}>{money(totalProyecto, project.moneda)}</div>
           </div>
         )}
       </div>
