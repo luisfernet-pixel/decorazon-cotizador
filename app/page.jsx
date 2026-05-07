@@ -1258,7 +1258,7 @@ export default function Page() {
                     <th>Ítem</th>
                     <th>Descripción</th>
                     <th>Cantidad</th>
-                    <th>Costo</th>
+                    <th>Costo unit</th>
                     <th>Utilidad</th>
                     <th>Total unitario</th>
                     <th>Total</th>
@@ -1307,6 +1307,38 @@ export default function Page() {
                 </tbody>
               </table>
             </div>
+            {details.length ? (
+              <div className="quote-box" style={{ marginTop: 12 }}>
+                {(() => {
+                  const sumCostoUnit = details.reduce((acc, row) => acc + Number(row.costoUnitario || 0), 0)
+                  const sumTotalUnit = details.reduce((acc, row) => {
+                    const costo = Number(row.costoUnitario || 0)
+                    const utilidadPct = Number(row.tasaUtilidad || 0)
+                    return acc + (costo * (1 + utilidadPct / 100))
+                  }, 0)
+                  const sumTotal = details.reduce((acc, row) => {
+                    const cantidad = Number(row.cantidad || 0)
+                    const costo = Number(row.costoUnitario || 0)
+                    const utilidadPct = Number(row.tasaUtilidad || 0)
+                    const totalUnitario = costo * (1 + utilidadPct / 100)
+                    return acc + (cantidad * totalUnitario)
+                  }, 0)
+                  return (
+                    <div className="grid grid-3" style={{ gap: 10 }}>
+                      <div className="muted" style={{ color: '#e9fbff' }}>
+                        <strong style={{ color: '#ffffff' }}>Σ Costo unit:</strong> {money(sumCostoUnit, project.moneda)}
+                      </div>
+                      <div className="muted" style={{ color: '#e9fbff' }}>
+                        <strong style={{ color: '#ffffff' }}>Σ Total unitario:</strong> {money(sumTotalUnit, project.moneda)}
+                      </div>
+                      <div className="muted" style={{ color: '#e9fbff' }}>
+                        <strong style={{ color: '#ffffff' }}>Σ Total:</strong> {money(sumTotal, project.moneda)}
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            ) : null}
           </section>
         </div>
       )}
