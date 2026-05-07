@@ -1,4 +1,4 @@
-export default function HomeSection({
+﻿export default function HomeSection({
   resources,
   clients,
   history,
@@ -8,7 +8,7 @@ export default function HomeSection({
   money,
 }) {
   const materialUsage = (details || []).reduce((acc, row) => {
-    const desc = String(row.descripcion || '').trim() || 'Sin descripción'
+    const desc = String(row.descripcion || '').trim() || 'Sin descripciÃ³n'
     const spec = String(row.especificacion || '').trim() || '-'
     const supplier = String(row.proveedor || '').trim() || '-'
     const unit = String(row.unidad || '').trim() || 'unidad'
@@ -66,20 +66,20 @@ export default function HomeSection({
             <div className="stat-card">
               <div className="stat-label">Total actual</div>
               <div className="stat-money">{money(totalProyecto || 0)}</div>
-              <div className="stat-meta">{itemRows.length} ítems</div>
+              <div className="stat-meta">{itemRows.length} Ã­tems</div>
             </div>
           </div>
         </section>
 
         <section className="dash-block">
-          <h2 className="dash-title">Materiales Más Usados</h2>
+          <h2 className="dash-title">Materiales MÃ¡s Usados</h2>
           {topMaterials.length ? (
             <div className="table-wrap dash-table">
               <table>
                 <thead>
                   <tr>
                     <th>Material</th>
-                    <th>Medida / Especificación</th>
+                    <th>Medida / EspecificaciÃ³n</th>
                     <th>Proveedor</th>
                     <th>Usos</th>
                     <th>Cantidad total</th>
@@ -101,7 +101,7 @@ export default function HomeSection({
               </table>
             </div>
           ) : (
-            <div className="empty-note">Aún no hay subítems para calcular uso. Te muestro recursos destacados por costo.</div>
+            <div className="empty-note">AÃºn no hay subÃ­tems para calcular uso. Te muestro recursos destacados por costo.</div>
           )}
           {!topMaterials.length && (
             <div className="table-wrap dash-table" style={{ marginTop: 10 }}>
@@ -109,7 +109,7 @@ export default function HomeSection({
                 <thead>
                   <tr>
                     <th>Recurso</th>
-                    <th>Categoría</th>
+                    <th>CategorÃ­a</th>
                     <th>Proveedor</th>
                     <th>Costo unitario</th>
                   </tr>
@@ -131,7 +131,7 @@ export default function HomeSection({
 
         <div className="grid grid-2 dash-bottom-grid">
           <section className="dash-block dash-bottom-card">
-            <h2 className="dash-title">Últimos Clientes</h2>
+            <h2 className="dash-title">Ãšltimos Clientes</h2>
             <div className="table-wrap dash-table">
               <table className="clients-table">
                 <colgroup>
@@ -143,7 +143,7 @@ export default function HomeSection({
                   <tr>
                     <th>Cliente</th>
                     <th>Responsable</th>
-                    <th>Teléfono</th>
+                    <th>TelÃ©fono</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -157,7 +157,7 @@ export default function HomeSection({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={3} className="empty-note">Aún no hay clientes registrados.</td>
+                      <td colSpan={3} className="empty-note">AÃºn no hay clientes registrados.</td>
                     </tr>
                   )}
                 </tbody>
@@ -166,7 +166,7 @@ export default function HomeSection({
           </section>
 
           <section className="dash-block dash-bottom-card">
-            <h2 className="dash-title">Últimas Cotizaciones</h2>
+            <h2 className="dash-title">Ãšltimas Cotizaciones</h2>
             <div className="table-wrap dash-table">
               <table className="quotes-table">
                 <colgroup>
@@ -177,7 +177,7 @@ export default function HomeSection({
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>N°</th>
+                    <th>NÂ°</th>
                     <th>Proyecto</th>
                     <th>Cliente</th>
                     <th>Fecha</th>
@@ -195,7 +195,7 @@ export default function HomeSection({
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={4} className="empty-note">Aún no hay cotizaciones guardadas.</td>
+                      <td colSpan={4} className="empty-note">AÃºn no hay cotizaciones guardadas.</td>
                     </tr>
                   )}
                 </tbody>
@@ -321,3 +321,4 @@ export default function HomeSection({
     </div>
   )
 }
+

@@ -219,7 +219,7 @@ export default function Page() {
   async function downloadPdf() {
     try {
       if (!itemRows.length) {
-        alert('Primero agrega al menos un ítem.')
+        alert('Primero agrega al menos un producto.')
         return
       }
 
@@ -601,7 +601,7 @@ export default function Page() {
   function saveItemLocal(e) {
     e.preventDefault()
     if (!itemForm.nombre.trim()) {
-      alert('Escribe un nombre para el ítem.')
+      alert('Escribe un nombre para el producto.')
       return
     }
     if (editingItemId) {
@@ -656,7 +656,7 @@ export default function Page() {
     })
   }
   function deleteItem(id) {
-    if (!confirm('¿Eliminar este ítem y sus subítems?')) return
+    if (!confirm('¿Eliminar este producto y sus detalles?')) return
     setItems((prev) => prev.filter((item) => item.id !== id))
     setDetails((prev) => prev.filter((d) => d.itemId !== id))
     if (editingItemId === id) {
@@ -673,11 +673,11 @@ export default function Page() {
   function saveDetailLocal(e) {
     e.preventDefault()
     if (!detailForm.itemId) {
-      alert('Primero selecciona un ítem.')
+      alert('Primero selecciona un producto.')
       return
     }
     if (!detailForm.descripcion.trim()) {
-      alert('Escribe la descripción del subítem.')
+      alert('Escribe la descripción del detalle.')
       return
     }
     const payload = {
@@ -715,7 +715,7 @@ export default function Page() {
     })
   }
   function deleteDetail(id) {
-    if (!confirm('¿Eliminar este subítem?')) return
+    if (!confirm('¿Eliminar este detalle?')) return
     setDetails((prev) => prev.filter((d) => d.id !== id))
     if (editingDetailId === id) {
       setEditingDetailId(null)
@@ -729,7 +729,7 @@ export default function Page() {
       return
     }
     if (!items.length) {
-      alert('Agrega al menos un ítem.')
+      alert('Agrega al menos un producto.')
       return
     }
     setSavingProject(true)
@@ -805,7 +805,7 @@ export default function Page() {
         .single()
       if (insertedItem.error) {
         setSavingProject(false)
-        alert('Error al guardar ítem: ' + insertedItem.error.message)
+        alert('Error al guardar producto: ' + insertedItem.error.message)
         return
       }
       const dbItemId = insertedItem.data.id
@@ -826,7 +826,7 @@ export default function Page() {
         }])
         if (insertedDetail.error) {
           setSavingProject(false)
-          alert('Error al guardar subítem: ' + insertedDetail.error.message)
+          alert('Error al guardar detalle: ' + insertedDetail.error.message)
           return
         }
       }
@@ -1064,7 +1064,7 @@ export default function Page() {
       {activeTab === 'items' && (
         <div className="grid" style={{ gap: 16 }}>
           <section className="card">
-            <h2>{editingItemId ? 'Editar ítem' : 'Crear ítem'}</h2>
+            <h2>{editingItemId ? 'Editar producto' : 'Crear producto'}</h2>
             <form className="grid" style={{ gap: 12 }} onSubmit={saveItemLocal}>
               <div className="grid grid-2">
                 <div className="field">
@@ -1082,11 +1082,11 @@ export default function Page() {
                   <input value={itemForm.categoria} onChange={(e) => setItemForm({ ...itemForm, categoria: e.target.value })} />
                 </div>
                 <div className="field">
-                  <label>Cantidad de ítems</label>
+                  <label>Cantidad de productos</label>
                   <input type="number" min="1" step="1" value={itemForm.cantidad} onChange={(e) => setItemForm({ ...itemForm, cantidad: e.target.value })} />
                 </div>
                 <div className="field">
-                  <label>Impuesto del ítem (%)</label>
+                  <label>Impuesto del producto (%)</label>
                   <input type="number" value={itemForm.tasaImpuesto} onChange={(e) => setItemForm({ ...itemForm, tasaImpuesto: e.target.value })} />
                 </div>
                 <div className="field">
@@ -1104,11 +1104,11 @@ export default function Page() {
                   checked={itemForm.aplicaImpuesto}
                   onChange={(e) => setItemForm({ ...itemForm, aplicaImpuesto: e.target.checked })}
                 />
-                <span>Este ítem incluye impuestos de ley</span>
+                <span>Este producto incluye impuestos de ley</span>
               </label>
               <div className="action-row">
                 <button className="btn" type="submit">
-                  {editingItemId ? 'Guardar cambios' : 'Agregar ítem'}
+                  {editingItemId ? 'Guardar cambios' : 'Agregar producto'}
                 </button>
                 {editingItemId && (
                   <button
@@ -1126,12 +1126,12 @@ export default function Page() {
             </form>
           </section>
           <section className="card">
-            <h2>Ítems actuales</h2>
+            <h2>Productos actuales</h2>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Ítem</th>
+                    <th>Producto</th>
                     <th style={{ textAlign: 'right' }}>Cantidad</th>
                     <th>Descuento</th>
                     <th>Total s/f</th>
@@ -1176,7 +1176,7 @@ export default function Page() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="muted">Aún no agregaste ítems.</td>
+                      <td colSpan={7} className="muted">Aún no agregaste productos.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1188,13 +1188,13 @@ export default function Page() {
       {activeTab === 'subitems' && (
         <div className="grid" style={{ gap: 16 }}>
           <section className="card">
-            <h2>{editingDetailId ? 'Editar subítem' : 'Crear subítem'}</h2>
+            <h2>{editingDetailId ? 'Editar detalle' : 'Crear detalle'}</h2>
             <form className="grid" style={{ gap: 12 }} onSubmit={saveDetailLocal}>
               <div className="grid grid-2">
                 <div className="field">
-                  <label>Ítem</label>
+                  <label>Producto</label>
                   <select value={detailForm.itemId} onChange={(e) => setDetailForm({ ...detailForm, itemId: e.target.value })}>
-                    <option value="">Selecciona un ítem</option>
+                    <option value="">selecciona un producto</option>
                     {items.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.codigo} · {item.nombre}
@@ -1247,7 +1247,7 @@ export default function Page() {
               </div>
               <div className="action-row">
                 <button className="btn" type="submit">
-                  {editingDetailId ? 'Guardar cambios' : 'Agregar subítem'}
+                  {editingDetailId ? 'Guardar cambios' : 'Agregar detalle'}
                 </button>
                 {editingDetailId && (
                   <button
@@ -1265,12 +1265,12 @@ export default function Page() {
             </form>
           </section>
           <section className="card">
-            <h2>Subítems actuales</h2>
+            <h2>SubProductos actuales</h2>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    <th>Ítem</th>
+                    <th>Producto</th>
                     <th>Descripción</th>
                     <th>Cantidad</th>
                     <th>Precio unitario</th>
@@ -1322,7 +1322,7 @@ export default function Page() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan={8} className="muted">Aún no agregaste subítems.</td>
+                      <td colSpan={8} className="muted">Aún no agregaste detalles.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1874,6 +1874,7 @@ export default function Page() {
     </main>
   )
 }
+
 
 
 

@@ -42,7 +42,7 @@ export default function QuoteSection({
           <thead>
             <tr>
               <th style={{ width: '10%' }}>Código</th>
-              <th style={{ width: '16%' }}>Ítem</th>
+              <th style={{ width: '16%' }}>Producto</th>
               <th style={{ width: '34%' }}>Descripción</th>
               <th style={{ width: '10%', textAlign: 'right' }}>Cantidad</th>
               <th style={{ width: '14%', textAlign: 'right' }}>Precio unitario</th>
@@ -104,3 +104,4 @@ export default function QuoteSection({
     </section>
   )
 }
+
