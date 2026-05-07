@@ -177,15 +177,21 @@ export default function Page() {
         const ganancia = subtotal * (utilidadPct / 100)
         return acc + (subtotal + ganancia)
       }, 0)
+      const descuentoPct = Math.min(100, Math.max(0, Number(item.descuentoEspecial || 0)))
+      const descuentoUnitario = costoUnitarioItem * (descuentoPct / 100)
+      const totalUnitarioSinFactura = costoUnitarioItem - descuentoUnitario
       const impuestoUnitario = item.aplicaImpuesto
-        ? costoUnitarioItem * (Number(item.tasaImpuesto || 0) / 100)
+        ? totalUnitarioSinFactura * (Number(item.tasaImpuesto || 0) / 100)
         : 0
-      const precioUnitario = costoUnitarioItem + impuestoUnitario
-      const subtotal = costoUnitarioItem * cantidadItem
+      const precioUnitario = totalUnitarioSinFactura + impuestoUnitario
+      const subtotal = totalUnitarioSinFactura * cantidadItem
       const impuesto = impuestoUnitario * cantidadItem
       return {
         ...item,
         cantidad: cantidadItem,
+        descuentoPct,
+        descuentoMonto: descuentoUnitario * cantidadItem,
+        totalSinFactura: subtotal,
         precioUnitario,
         precioUnitarioSinImpuesto: costoUnitarioItem,
         subtotal,
@@ -1125,12 +1131,12 @@ export default function Page() {
               <table>
                 <thead>
                   <tr>
-                    <th>Código</th>
                     <th>Ítem</th>
                     <th style={{ textAlign: 'right' }}>Cantidad</th>
-                    <th>Desc.</th>
+                    <th>Descuento</th>
+                    <th>Total s/f</th>
                     <th>Impuesto</th>
-                    <th>Total</th>
+                    <th>Total facturado</th>
                     <th>Acciones</th>
                   </tr>
                 </thead>
@@ -1138,17 +1144,21 @@ export default function Page() {
                   {itemRows.length ? (
                     itemRows.map((item) => (
                       <tr key={item.id}>
-                        <td>{item.codigo}</td>
                         <td>
-                          <strong>{item.nombre}</strong>
+                          <strong>{item.codigo} · {item.nombre}</strong>
                           <div className="tiny-muted">{item.categoria}</div>
                         </td>
                         <td style={{ textAlign: 'right' }}>
                           {Number(item.cantidad || 1).toLocaleString('es-BO')}
                         </td>
                         <td>{item.descuentoPct ? `${item.descuentoPct}%` : '-'}</td>
-                        <td>{item.aplicaImpuesto ? `${item.tasaImpuesto}%` : 'No incluye'}</td>
-                        <td>{money(item.subtotal, project.moneda)}</td>
+                        <td>{money(item.totalSinFactura, project.moneda)}</td>
+                        <td>
+                          {item.aplicaImpuesto
+                            ? `${Number(item.tasaImpuesto || 0).toLocaleString('es-BO')}% · ${money(item.impuesto, project.moneda)}`
+                            : 'No incluye'}
+                        </td>
+                        <td>{money(item.total, project.moneda)}</td>
                         <td>
                           <div className="action-row">
                             <button type="button" className="mini-btn success" onClick={() => editItem(item)}>
