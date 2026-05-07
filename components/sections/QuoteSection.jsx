@@ -89,7 +89,7 @@ export default function QuoteSection({
             <strong style={{ color: '#ffffff', fontSize: '1.5rem' }}>Total general</strong>
             <div className="muted" style={{ color: '#e9fbff' }}>Total: {money(subtotalProyecto, project.moneda)}</div>
             <div className="muted" style={{ color: '#e9fbff' }}>Descuento ({Number(descuentoGeneralPct || 0)}%): {money(descuentoGeneralMonto, project.moneda)}</div>
-            <div className="kpi" style={{ fontSize: 42, color: '#ffffff' }}>{money(totalProyecto, project.moneda)}</div>
+            <div className="kpi" style={{ fontSize: 34, color: '#ffffff' }}>{money(totalProyecto, project.moneda)}</div>
           </div>
         )}
       </div>
