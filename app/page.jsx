@@ -1258,9 +1258,10 @@ export default function Page() {
                     <th>Ítem</th>
                     <th>Descripción</th>
                     <th>Cantidad</th>
-                    <th>Costo unit</th>
+                    <th>Precio unitario</th>
+                    <th>Subtotal</th>
                     <th>Utilidad</th>
-                    <th>Total unitario</th>
+                    <th>Ganancia</th>
                     <th>Total</th>
                     <th>Acciones</th>
                   </tr>
@@ -1270,21 +1271,26 @@ export default function Page() {
                     details.map((row) => {
                       const item = items.find((x) => x.id === row.itemId)
                       const cantidad = Number(row.cantidad || 0)
-                      const costo = Number(row.costoUnitario || 0)
+                      const precioUnitario = Number(row.costoUnitario || 0)
                       const utilidadPct = Number(row.tasaUtilidad || 0)
-                      const totalUnitario = costo * (1 + utilidadPct / 100)
-                      const total = cantidad * totalUnitario
+                      const subtotal = cantidad * precioUnitario
+                      const ganancia = subtotal * (utilidadPct / 100)
+                      const total = subtotal + ganancia
                       return (
                         <tr key={row.id}>
-                          <td>{item?.codigo || '-'}</td>
+                          <td>
+                            <strong>{item?.codigo || '-'}</strong>
+                            <div className="tiny-muted">{item?.nombre || '-'}</div>
+                          </td>
                           <td>
                             <strong>{row.descripcion}</strong>
                             <div className="tiny-muted">{row.proveedor || '-'} · {row.tipo}</div>
                           </td>
                           <td>{cantidad} {row.unidad}</td>
-                          <td>{money(costo, project.moneda)}</td>
+                          <td>{money(precioUnitario, project.moneda)}</td>
+                          <td>{money(subtotal, project.moneda)}</td>
                           <td>{utilidadPct}%</td>
-                          <td>{money(totalUnitario, project.moneda)}</td>
+                          <td>{money(ganancia, project.moneda)}</td>
                           <td>{money(total, project.moneda)}</td>
                           <td>
                             <div className="action-row">
@@ -1308,25 +1314,32 @@ export default function Page() {
                 {details.length ? (
                   <tfoot>
                     {(() => {
-                      const sumCostoUnit = details.reduce((acc, row) => acc + Number(row.costoUnitario || 0), 0)
-                      const sumTotalUnit = details.reduce((acc, row) => {
-                        const costo = Number(row.costoUnitario || 0)
-                        const utilidadPct = Number(row.tasaUtilidad || 0)
-                        return acc + (costo * (1 + utilidadPct / 100))
+                      const sumCantidad = details.reduce((acc, row) => acc + Number(row.cantidad || 0), 0)
+                      const sumPrecioUnit = details.reduce((acc, row) => acc + Number(row.costoUnitario || 0), 0)
+                      const sumSubtotal = details.reduce((acc, row) => (
+                        acc + (Number(row.cantidad || 0) * Number(row.costoUnitario || 0))
+                      ), 0)
+                      const sumUtilidadPct = details.reduce((acc, row) => acc + Number(row.tasaUtilidad || 0), 0)
+                      const sumGanancia = details.reduce((acc, row) => {
+                        const subtotal = Number(row.cantidad || 0) * Number(row.costoUnitario || 0)
+                        return acc + (subtotal * (Number(row.tasaUtilidad || 0) / 100))
                       }, 0)
                       const sumTotal = details.reduce((acc, row) => {
                         const cantidad = Number(row.cantidad || 0)
-                        const costo = Number(row.costoUnitario || 0)
-                        const utilidadPct = Number(row.tasaUtilidad || 0)
-                        const totalUnitario = costo * (1 + utilidadPct / 100)
-                        return acc + (cantidad * totalUnitario)
+                        const precioUnitario = Number(row.costoUnitario || 0)
+                        const subtotal = cantidad * precioUnitario
+                        const ganancia = subtotal * (Number(row.tasaUtilidad || 0) / 100)
+                        return acc + (subtotal + ganancia)
                       }, 0)
                       return (
                         <tr>
-                          <td colSpan={3} style={{ textAlign: 'right', fontWeight: 800 }}>Sumatorias</td>
-                          <td style={{ fontWeight: 800 }}>{money(sumCostoUnit, project.moneda)}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 800 }}>Totales</td>
                           <td />
-                          <td style={{ fontWeight: 800 }}>{money(sumTotalUnit, project.moneda)}</td>
+                          <td style={{ fontWeight: 800 }}>{sumCantidad.toLocaleString('es-BO')}</td>
+                          <td style={{ fontWeight: 800 }}>{money(sumPrecioUnit, project.moneda)}</td>
+                          <td style={{ fontWeight: 800 }}>{money(sumSubtotal, project.moneda)}</td>
+                          <td style={{ fontWeight: 800 }}>{sumUtilidadPct.toLocaleString('es-BO')}%</td>
+                          <td style={{ fontWeight: 800 }}>{money(sumGanancia, project.moneda)}</td>
                           <td style={{ fontWeight: 800 }}>{money(sumTotal, project.moneda)}</td>
                           <td />
                         </tr>
