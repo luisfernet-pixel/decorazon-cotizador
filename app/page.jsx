@@ -1315,7 +1315,6 @@ export default function Page() {
                   <tfoot>
                     {(() => {
                       const sumCantidad = details.reduce((acc, row) => acc + Number(row.cantidad || 0), 0)
-                      const sumPrecioUnit = details.reduce((acc, row) => acc + Number(row.costoUnitario || 0), 0)
                       const sumSubtotal = details.reduce((acc, row) => (
                         acc + (Number(row.cantidad || 0) * Number(row.costoUnitario || 0))
                       ), 0)
@@ -1335,7 +1334,7 @@ export default function Page() {
                           <td style={{ textAlign: 'right', fontWeight: 700, color: '#b8f3ff' }}>Totales</td>
                           <td />
                           <td />
-                          <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(sumPrecioUnit, project.moneda)}</td>
+                          <td />
                           <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(sumSubtotal, project.moneda)}</td>
                           <td />
                           <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(sumGanancia, project.moneda)}</td>
