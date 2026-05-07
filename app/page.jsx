@@ -1319,7 +1319,6 @@ export default function Page() {
                       const sumSubtotal = details.reduce((acc, row) => (
                         acc + (Number(row.cantidad || 0) * Number(row.costoUnitario || 0))
                       ), 0)
-                      const sumUtilidadPct = details.reduce((acc, row) => acc + Number(row.tasaUtilidad || 0), 0)
                       const sumGanancia = details.reduce((acc, row) => {
                         const subtotal = Number(row.cantidad || 0) * Number(row.costoUnitario || 0)
                         return acc + (subtotal * (Number(row.tasaUtilidad || 0) / 100))
@@ -1333,14 +1332,14 @@ export default function Page() {
                       }, 0)
                       return (
                         <tr>
-                          <td style={{ textAlign: 'right', fontWeight: 800 }}>Totales</td>
+                          <td style={{ textAlign: 'right', fontWeight: 800, color: '#b8f3ff' }}>Totales</td>
                           <td />
-                          <td style={{ fontWeight: 800 }}>{sumCantidad.toLocaleString('es-BO')}</td>
-                          <td style={{ fontWeight: 800 }}>{money(sumPrecioUnit, project.moneda)}</td>
-                          <td style={{ fontWeight: 800 }}>{money(sumSubtotal, project.moneda)}</td>
-                          <td style={{ fontWeight: 800 }}>{sumUtilidadPct.toLocaleString('es-BO')}%</td>
-                          <td style={{ fontWeight: 800 }}>{money(sumGanancia, project.moneda)}</td>
-                          <td style={{ fontWeight: 800 }}>{money(sumTotal, project.moneda)}</td>
+                          <td />
+                          <td style={{ fontWeight: 800, color: '#b8f3ff' }}>{money(sumPrecioUnit, project.moneda)}</td>
+                          <td style={{ fontWeight: 800, color: '#b8f3ff' }}>{money(sumSubtotal, project.moneda)}</td>
+                          <td />
+                          <td style={{ fontWeight: 800, color: '#b8f3ff' }}>{money(sumGanancia, project.moneda)}</td>
+                          <td style={{ fontWeight: 800, color: '#b8f3ff' }}>{money(sumTotal, project.moneda)}</td>
                           <td />
                         </tr>
                       )
