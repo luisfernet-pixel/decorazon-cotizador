@@ -1,19 +1,24 @@
-export default function ProjectSection({
+﻿export default function ProjectSection({
   project,
   setProject,
   clients,
   applyClientInProject,
   resetCotizacionActual,
+  onSaveDraft,
+  savingProject,
 }) {
   return (
-    <section className="card">
+    <section className="card compact-card">
       <h2>Datos del proyecto</h2>
-      <div className="action-row" style={{ marginBottom: 12 }}>
+      <div className="action-row sticky-form-actions" style={{ marginBottom: 12 }}>
         <button type="button" className="btn success" onClick={resetCotizacionActual}>
           Nueva cotización
         </button>
+        <button type="button" className="btn secondary" onClick={onSaveDraft} disabled={savingProject}>
+          {savingProject ? 'Guardando...' : 'Guardar borrador'}
+        </button>
       </div>
-      <div className="grid grid-3">
+      <div className="grid grid-3 form-compact">
         <div className="field">
           <label>Nro. cotización</label>
           <input value={project.numero} onChange={(e) => setProject({ ...project, numero: e.target.value })} />

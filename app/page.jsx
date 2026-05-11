@@ -1,5 +1,6 @@
-﻿'use client'
+'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment } from 'react'
 import { COMPANY } from '@/lib/company'
 import { getCompanyInfoLine } from '@/lib/company-format'
 import { TABLES } from '@/lib/db-constants'
@@ -23,6 +24,7 @@ import { HistorySection, HomeSection, ProjectSection, QuoteSection, ResourcesSec
 import TabNav from '@/components/TabNav'
 const initialItem = createInitialItem(COMPANY.defaultTaxRate ?? 19)
 const initialDetail = createInitialDetail(COMPANY.defaultMarginRate ?? 100)
+const QUOTE_EDIT_TABS = ['proyecto', 'items', 'subitems', 'cotizacion']
 export default function Page() {
   const [activeTab, setActiveTab] = useState('inicio')
   const [project, setProject] = useState(() => createInitialProject())
@@ -43,8 +45,19 @@ export default function Page() {
   const [editingItemId, setEditingItemId] = useState(null)
   const [editingDetailId, setEditingDetailId] = useState(null)
   const [editingProjectId, setEditingProjectId] = useState(null)
+  const [collapsedDetailGroups, setCollapsedDetailGroups] = useState({})
   const [toastMessage, setToastMessage] = useState('')
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [restoreBusy, setRestoreBusy] = useState(false)
+  const [addBusy, setAddBusy] = useState(false)
+  const [lastSyncAt, setLastSyncAt] = useState(() => Date.now())
+  const [syncTick, setSyncTick] = useState(0)
+  const [savedQuoteSnapshot, setSavedQuoteSnapshot] = useState(null)
+  const backupInputRef = useRef(null)
+  const backupImportModeRef = useRef('restore')
   const toastTimeoutRef = useRef(null)
+  const liveRefreshTimeoutRef = useRef(null)
+  const syncPulseRef = useRef(null)
   function showToast(message) {
     setToastMessage(message)
     if (toastTimeoutRef.current) window.clearTimeout(toastTimeoutRef.current)
@@ -53,6 +66,77 @@ export default function Page() {
       toastTimeoutRef.current = null
     }, 2200)
   }
+  function markSyncedNow() {
+    setLastSyncAt(Date.now())
+  }
+  function getSyncText() {
+    const elapsedSec = Math.max(0, Math.floor((Date.now() - lastSyncAt) / 1000))
+    if (elapsedSec < 5) return 'Sincronizado ahora'
+    if (elapsedSec < 60) return `Sincronizado hace ${elapsedSec} seg`
+    const min = Math.floor(elapsedSec / 60)
+    if (min < 60) return `Sincronizado hace ${min} min`
+    const h = Math.floor(min / 60)
+    return `Sincronizado hace ${h} h`
+  }
+  function getEditingProjectText() {
+    const quoteNumber = String(project.numero || '').trim() || 'S/N'
+    const projectName = String(project.nombreProyecto || '').trim() || 'Sin nombre'
+    const responsible = String(project.responsable || '').trim() || 'Sin responsable'
+    if (!editingProjectId && !projectName && !responsible) return 'Sin proyecto en edición'
+    return `${quoteNumber} · ${projectName} · ${responsible}`
+  }
+  function buildQuoteSnapshot(projectArg, itemsArg, detailsArg, editingProjectIdArg) {
+    return JSON.stringify({
+      editingProjectId: editingProjectIdArg || null,
+      project: {
+        numero: projectArg.numero || '',
+        nombreProyecto: projectArg.nombreProyecto || '',
+        clienteId: projectArg.clienteId || '',
+        cliente: projectArg.cliente || '',
+        empresa: projectArg.empresa || '',
+        responsable: projectArg.responsable || '',
+        telefono: projectArg.telefono || '',
+        nit: projectArg.nit || '',
+        razonSocial: projectArg.razonSocial || '',
+        fecha: projectArg.fecha || '',
+        validoHasta: projectArg.validoHasta || '',
+        moneda: projectArg.moneda || 'BOB',
+        condicionesPago: projectArg.condicionesPago || '',
+        tiempoEntrega: projectArg.tiempoEntrega || '',
+        observaciones: projectArg.observaciones || '',
+        modoCotizacion: projectArg.modoCotizacion || 'total',
+        descuentoGeneralPct: Number(projectArg.descuentoGeneralPct || 0),
+      },
+      items: (itemsArg || []).map((item) => ({
+        id: item.id,
+        codigo: item.codigo || '',
+        nombre: item.nombre || '',
+        categoria: item.categoria || '',
+        descripcion: item.descripcion || '',
+        cantidad: Number(item.cantidad || 1),
+        aplicaImpuesto: !!item.aplicaImpuesto,
+        tasaImpuesto: Number(item.tasaImpuesto || 0),
+        descuentoEspecial: Number(item.descuentoEspecial || 0),
+      })),
+      details: (detailsArg || []).map((row) => ({
+        id: row.id,
+        itemId: row.itemId,
+        tipo: row.tipo || '',
+        descripcion: row.descripcion || '',
+        proveedor: row.proveedor || '',
+        unidad: row.unidad || '',
+        cantidad: Number(row.cantidad || 0),
+        costoUnitario: Number(row.costoUnitario || 0),
+        tasaUtilidad: Number(row.tasaUtilidad || 0),
+        especificacion: row.especificacion || '',
+      })),
+    })
+  }
+  const currentQuoteSnapshot = useMemo(
+    () => buildQuoteSnapshot(project, items, details, editingProjectId),
+    [project, items, details, editingProjectId]
+  )
+  const hasUnsavedQuoteChanges = savedQuoteSnapshot !== null && currentQuoteSnapshot !== savedQuoteSnapshot
   async function loadResources() {
     if (!supabase) return
     const { data, error } = await supabase
@@ -69,14 +153,19 @@ export default function Page() {
         id: row.id,
         tipo: meta.type || '-',
         categoria: meta.category || '-',
+        subcategoria: meta.subcategory || '',
+        espesor: meta.thickness || '',
+        tamano: meta.size || '',
         nombre: row.name || '-',
         especificacion: row.specification || '',
         unidad: row.unit || '-',
         proveedor: meta.supplier || '-',
         costo: Number(row.base_cost || 0),
+        fechaActualizacion: row.last_price_update || '',
       }
     })
     setResources(mapped)
+    markSyncedNow()
   }
   async function loadHistory() {
     if (!supabase) return
@@ -114,6 +203,7 @@ export default function Page() {
       }
     })
     setHistory(mapped)
+    markSyncedNow()
   }
   async function loadClients() {
     if (!supabase) return
@@ -133,6 +223,7 @@ export default function Page() {
       nit: row.nit || '',
       razonSocial: row.legal_name || '',
     })))
+    markSyncedNow()
   }
   function applyClientInProject(client) {
     setProject((prev) => ({
@@ -152,8 +243,41 @@ export default function Page() {
     loadHistory()
   }, [])
   useEffect(() => {
+    if (savedQuoteSnapshot === null) {
+      setSavedQuoteSnapshot(buildQuoteSnapshot(project, items, details, editingProjectId))
+    }
+  }, [savedQuoteSnapshot, project, items, details, editingProjectId])
+  useEffect(() => {
     return () => {
       if (toastTimeoutRef.current) window.clearTimeout(toastTimeoutRef.current)
+    }
+  }, [])
+  useEffect(() => {
+    syncPulseRef.current = window.setInterval(() => setSyncTick((v) => v + 1), 1000)
+    return () => {
+      if (syncPulseRef.current) window.clearInterval(syncPulseRef.current)
+    }
+  }, [])
+  useEffect(() => {
+    if (!supabase) return
+    const scheduleRefresh = () => {
+      if (liveRefreshTimeoutRef.current) window.clearTimeout(liveRefreshTimeoutRef.current)
+      liveRefreshTimeoutRef.current = window.setTimeout(() => {
+        Promise.all([loadResources(), loadClients(), loadHistory()]).catch(() => {})
+        liveRefreshTimeoutRef.current = null
+      }, 450)
+    }
+    const channel = supabase
+      .channel('decorazon-live-sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.resources }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.clients }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.projects }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.items }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLES.details }, scheduleRefresh)
+      .subscribe()
+    return () => {
+      if (liveRefreshTimeoutRef.current) window.clearTimeout(liveRefreshTimeoutRef.current)
+      supabase.removeChannel(channel)
     }
   }, [])
   const detailsByItemId = useMemo(() => {
@@ -165,6 +289,50 @@ export default function Page() {
       return acc
     }, {})
   }, [details])
+  const detailGroups = useMemo(() => {
+    const bucket = {}
+    items.forEach((item) => {
+      bucket[item.id] = {
+        item,
+        rows: [],
+      }
+    })
+    details.forEach((row) => {
+      if (!bucket[row.itemId]) {
+        bucket[row.itemId] = {
+          item: items.find((x) => x.id === row.itemId) || null,
+          rows: [],
+        }
+      }
+      bucket[row.itemId].rows.push(row)
+    })
+    const ordered = Object.values(bucket).filter((g) => g.rows.length > 0)
+    return ordered.map((group) => {
+      const sumCantidad = group.rows.reduce((acc, row) => acc + Number(row.cantidad || 0), 0)
+      const sumSubtotal = group.rows.reduce((acc, row) => (
+        acc + (Number(row.cantidad || 0) * Number(row.costoUnitario || 0))
+      ), 0)
+      const sumGanancia = group.rows.reduce((acc, row) => {
+        const subtotal = Number(row.cantidad || 0) * Number(row.costoUnitario || 0)
+        return acc + (subtotal * (Number(row.tasaUtilidad || 0) / 100))
+      }, 0)
+      return {
+        ...group,
+        sums: {
+          cantidad: sumCantidad,
+          subtotal: sumSubtotal,
+          ganancia: sumGanancia,
+          total: sumSubtotal + sumGanancia,
+        },
+      }
+    })
+  }, [items, details])
+  function toggleDetailGroup(itemId) {
+    setCollapsedDetailGroups((prev) => ({
+      ...prev,
+      [itemId]: prev[itemId] === undefined ? false : !prev[itemId],
+    }))
+  }
   const itemRows = useMemo(() => {
     return items.map((item) => {
       const related = detailsByItemId[item.id] || []
@@ -186,6 +354,7 @@ export default function Page() {
       const precioUnitario = totalUnitarioSinFactura + impuestoUnitario
       const subtotal = totalUnitarioSinFactura * cantidadItem
       const impuesto = impuestoUnitario * cantidadItem
+      const totalFacturado = subtotal + impuesto
       return {
         ...item,
         cantidad: cantidadItem,
@@ -193,10 +362,11 @@ export default function Page() {
         descuentoMonto: descuentoUnitario * cantidadItem,
         totalSinFactura: subtotal,
         precioUnitario,
+        precioUnitarioFacturado: cantidadItem > 0 ? totalFacturado / cantidadItem : 0,
         precioUnitarioSinImpuesto: costoUnitarioItem,
         subtotal,
         impuesto,
-        total: subtotal + impuesto,
+        total: totalFacturado,
       }
     })
   }, [items, detailsByItemId])
@@ -214,6 +384,7 @@ export default function Page() {
     setEditingDetailId(null)
     setItemForm(initialItem)
     setDetailForm(initialDetail)
+    setSavedQuoteSnapshot(buildQuoteSnapshot(createInitialProject(), [], [], null))
   }
 
   async function downloadPdf() {
@@ -297,22 +468,39 @@ export default function Page() {
       doc.text(`${formatDateDisplay(project.fecha)}`, rightX + rightW - 8, topY + 63, { align: 'right' })
 
       const infoBoxY = topY + 42
-    const infoBoxH = 24
-    doc.setDrawColor(...line)
-    doc.setFillColor(...white)
-    doc.rect(margin, infoBoxY, leftW - 34, infoBoxH, 'FD')
-    doc.setTextColor(...ink)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10.5)
-    doc.text('Proyecto:', margin + 5, infoBoxY + 8)
-    doc.text('Empresa:', margin + 5, infoBoxY + 18)
-    doc.text('Responsable:', margin + 90, infoBoxY + 8)
-    doc.setFont('helvetica', 'normal')
-    doc.text(safeText(project.nombreProyecto) || '-', margin + 28, infoBoxY + 8)
-    doc.text(safeText(project.razonSocial || project.empresa || project.cliente) || '-', margin + 28, infoBoxY + 18)
-    doc.text(safeText(project.responsable) || '-', margin + 124, infoBoxY + 8)
+      const infoBoxH = 34
+      doc.setDrawColor(...line)
+      doc.setFillColor(...white)
+      doc.rect(margin, infoBoxY, leftW - 34, infoBoxH, 'FD')
+      doc.setTextColor(...ink)
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(10.5)
 
-      const tableStartY = 80
+      const leftLabelX = margin + 5
+      const leftValueX = margin + 28
+      const rightLabelX = margin + 90
+      const rightValueX = margin + 124
+      const row1Y = infoBoxY + 8
+      const row2Y = infoBoxY + 16
+      const row3Y = infoBoxY + 24
+      const row4Y = infoBoxY + 32
+
+      doc.text('Proyecto:', leftLabelX, row1Y)
+      doc.text('Empresa:', leftLabelX, row2Y)
+      doc.text('Cliente:', leftLabelX, row3Y)
+      doc.text('NIT:', leftLabelX, row4Y)
+      doc.text('Responsable:', rightLabelX, row1Y)
+      doc.text('Teléfono:', rightLabelX, row2Y)
+
+      doc.setFont('helvetica', 'normal')
+      doc.text(safeText(project.nombreProyecto) || '-', leftValueX, row1Y)
+      doc.text(safeText(project.razonSocial || project.empresa || project.cliente) || '-', leftValueX, row2Y)
+      doc.text(safeText(project.cliente) || '-', leftValueX, row3Y)
+      doc.text(safeText(project.nit) || '-', leftValueX, row4Y)
+      doc.text(safeText(project.responsable) || '-', rightValueX, row1Y)
+      doc.text(safeText(project.telefono) || '-', rightValueX, row2Y)
+
+      const tableStartY = 88
       const head = [['COD.', 'ITEM', 'DESCRIPCION', 'CANT.', 'P. UNITARIO', 'TOTAL']]
 
       const body = itemRows.map((item, index) => {
@@ -344,8 +532,8 @@ export default function Page() {
       margin: { left: margin, right: margin, top: 10, bottom: 24 },
       styles: {
         font: 'helvetica',
-        fontSize: 8.6,
-        cellPadding: 3.2,
+        fontSize: 8.2,
+        cellPadding: 2.2,
         textColor: ink,
         lineColor: line,
         lineWidth: 0.25,
@@ -360,10 +548,10 @@ export default function Page() {
         valign: 'middle',
         lineColor: line,
         lineWidth: 0.25,
-        minCellHeight: 13,
+        minCellHeight: 10,
       },
       bodyStyles: {
-        minCellHeight: 13,
+        minCellHeight: 10,
       },
       columnStyles,
     })
@@ -388,37 +576,37 @@ export default function Page() {
       doc.text(formatMoneyPdf(totalProyecto, project.moneda), totalX + 80, totalLabelY + 8, { align: 'right' })
     }
 
-      const boxGap = 6
+      const boxGap = 5
       const thirdW = (usableWidth - boxGap * 2) / 3
-      const footerBarH = 12
-      let bottomY = tableEndY + (showTotalGeneral ? 28 : 16)
+      const footerBarH = 10
+      let bottomY = tableEndY + (showTotalGeneral ? 14 : 10)
 
-      if (bottomY + 28 + footerBarH + 8 > pageHeight) {
+      if (bottomY + 24 + footerBarH + 6 > pageHeight) {
       doc.addPage('a4', 'l')
-      bottomY = 18
+      bottomY = 14
     }
 
       doc.setFillColor(...white)
     doc.setDrawColor(...line)
-    doc.rect(margin, bottomY, thirdW, 28, 'FD')
-    doc.rect(margin + thirdW + boxGap, bottomY, thirdW, 28, 'FD')
-    doc.rect(margin + (thirdW + boxGap) * 2, bottomY, thirdW, 28, 'FD')
+    doc.rect(margin, bottomY, thirdW, 24, 'FD')
+    doc.rect(margin + thirdW + boxGap, bottomY, thirdW, 24, 'FD')
+    doc.rect(margin + (thirdW + boxGap) * 2, bottomY, thirdW, 24, 'FD')
 
     doc.setTextColor(...ink)
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
-    doc.text('Condiciones', margin + 6, bottomY + 8)
-    doc.text('Observaciones', margin + thirdW + boxGap + 6, bottomY + 8)
+    doc.text('Condiciones', margin + 6, bottomY + 7)
+    doc.text('Observaciones', margin + thirdW + boxGap + 6, bottomY + 7)
 
     doc.setFont('helvetica', 'normal')
-    doc.setFontSize(9)
+    doc.setFontSize(8.4)
       const condLines = [
       `Forma de pago: ${safeText(project.condicionesPago) || '-'}`,
       `Tiempo de entrega: ${safeText(project.tiempoEntrega) || '-'}`,
       incluyeImpuestos ? 'La cotización incluye impuestos de ley.' : 'La cotización no incluye impuestos de ley.',
     ]
       const condText = doc.splitTextToSize(condLines.join('\n'), thirdW - 12)
-      doc.text(condText, margin + 6, bottomY + 15)
+      doc.text(condText, margin + 6, bottomY + 13)
 
       const obsLines = [safeText(project.observaciones) || '-']
     if (safeText(project.validoHasta)) {
@@ -428,26 +616,26 @@ export default function Page() {
       obsLines.push('El cliente podrá elegir una alternativa.')
     }
       const obsText = doc.splitTextToSize(obsLines.join('\n'), thirdW - 12)
-      doc.text(obsText, margin + thirdW + boxGap + 6, bottomY + 15)
+      doc.text(obsText, margin + thirdW + boxGap + 6, bottomY + 13)
 
       const sigX = margin + (thirdW + boxGap) * 2
     doc.setFont('helvetica', 'normal')
-    doc.line(sigX + 12, bottomY + 20, sigX + thirdW - 12, bottomY + 20)
+    doc.line(sigX + 12, bottomY + 17, sigX + thirdW - 12, bottomY + 17)
     doc.setFont('helvetica', 'bold')
-    doc.text('Tina Rodriguez', sigX + thirdW / 2, bottomY + 26, { align: 'center' })
+    doc.text('Tina Rodriguez', sigX + thirdW / 2, bottomY + 22, { align: 'center' })
 
       doc.setFillColor(...greenDark)
-    doc.rect(0, pageHeight - 12, pageWidth, 12, 'F')
+    doc.rect(0, pageHeight - 10, pageWidth, 10, 'F')
     doc.setTextColor(...white)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.8)
+    doc.setFontSize(8.4)
       const footerText = [
       safeText(COMPANY.address),
       safeText((COMPANY.phones || []).join(' / ')),
       safeText(COMPANY.email),
       'La Paz - Bolivia',
     ].filter(Boolean).join(' · ')
-      doc.text(footerText, pageWidth / 2, pageHeight - 4.2, { align: 'center' })
+      doc.text(footerText, pageWidth / 2, pageHeight - 3.4, { align: 'center' })
 
       const safeNumber = (safeText(project.numero) || 'cotizacion').replace(/[^\w\-]+/g, '_')
       doc.save(`${safeNumber}.pdf`)
@@ -472,10 +660,13 @@ export default function Page() {
       size_or_format: '',
       base_cost: Number(resourceForm.costo || 0),
       currency: 'BOB',
-      last_price_update: new Date().toISOString().slice(0, 10),
+      last_price_update: resourceForm.fechaActualizacion || new Date().toISOString().slice(0, 10),
       notes: JSON.stringify({
         type: resourceForm.tipo,
         category: resourceForm.categoria,
+        subcategory: resourceForm.subcategoria,
+        thickness: resourceForm.espesor,
+        size: resourceForm.tamano,
         supplier: resourceForm.proveedor,
       }),
       is_active: true,
@@ -573,17 +764,86 @@ export default function Page() {
     }
     await loadResources()
   }
+  async function updateResourcesMetadata(matcher, updater) {
+    if (!supabase) return false
+    const { data, error } = await supabase.from(TABLES.resources).select('id, notes')
+    if (error) {
+      alert('Error leyendo recursos para actualizar: ' + error.message)
+      return false
+    }
+    const targets = (data || []).filter((row) => matcher(resourceMeta(row)))
+    if (!targets.length) return true
+    const updates = await Promise.all(
+      targets.map(async (row) => {
+        const currentMeta = resourceMeta(row)
+        const nextMeta = updater({ ...currentMeta })
+        const { error: updateError } = await supabase
+          .from(TABLES.resources)
+          .update({ notes: JSON.stringify(nextMeta) })
+          .eq('id', row.id)
+        return updateError
+      })
+    )
+    const firstError = updates.find(Boolean)
+    if (firstError) {
+      alert('Error actualizando recursos: ' + firstError.message)
+      return false
+    }
+    return true
+  }
+  async function renameCategoryEverywhere(type, oldCategory, newCategory) {
+    if (!supabase) return
+    const ok = await updateResourcesMetadata(
+      (meta) => String(meta.type || '') === String(type || '') && String(meta.category || '') === String(oldCategory || ''),
+      (meta) => ({ ...meta, category: newCategory })
+    )
+    if (ok) await loadResources()
+  }
+  async function deleteCategoryEverywhere(type, category) {
+    if (!supabase) return
+    const ok = await updateResourcesMetadata(
+      (meta) => String(meta.type || '') === String(type || '') && String(meta.category || '') === String(category || ''),
+      (meta) => ({ ...meta, category: '', subcategory: '' })
+    )
+    if (ok) await loadResources()
+  }
+  async function renameSubcategoryEverywhere(type, category, oldSubcategory, newSubcategory) {
+    if (!supabase) return
+    const ok = await updateResourcesMetadata(
+      (meta) =>
+        String(meta.type || '') === String(type || '') &&
+        String(meta.category || '') === String(category || '') &&
+        String(meta.subcategory || '') === String(oldSubcategory || ''),
+      (meta) => ({ ...meta, subcategory: newSubcategory })
+    )
+    if (ok) await loadResources()
+  }
+  async function deleteSubcategoryEverywhere(type, category, subcategory) {
+    if (!supabase) return
+    const ok = await updateResourcesMetadata(
+      (meta) =>
+        String(meta.type || '') === String(type || '') &&
+        String(meta.category || '') === String(category || '') &&
+        String(meta.subcategory || '') === String(subcategory || ''),
+      (meta) => ({ ...meta, subcategory: '' })
+    )
+    if (ok) await loadResources()
+  }
   function editResource(resource) {
     setActiveTab('recursos')
     setEditingResourceId(resource.id)
     setResourceForm({
       tipo: resource.tipo || 'Material',
       categoria: resource.categoria || '',
+      subcategoria: resource.subcategoria || '',
+      espesor: resource.espesor || '',
+      tamano: resource.tamano || '',
       nombre: resource.nombre || '',
       especificacion: resource.especificacion || '',
       unidad: resource.unidad || 'unidad',
       proveedor: resource.proveedor || '',
       costo: Number(resource.costo || 0),
+      fechaActualizacion: resource.fechaActualizacion || new Date().toISOString().slice(0, 10),
     })
   }
   function addResourceToDetail(resource) {
@@ -722,13 +982,23 @@ export default function Page() {
       setDetailForm(initialDetail)
     }
   }
-  async function saveProjectCloud() {
+  async function saveProjectCloud(options = {}) {
+    const { allowWithoutItems = false, successMessage } = options
     if (!supabase) return
-    if (!project.nombreProyecto.trim()) {
-      alert('Escribe el nombre del proyecto.')
+    const hasAnyKeyData = [
+      project.nombreProyecto,
+      project.cliente,
+      project.responsable,
+      project.telefono,
+      project.nit,
+      project.razonSocial,
+      project.observaciones,
+    ].some((value) => String(value || '').trim().length > 0)
+    if (!hasAnyKeyData) {
+      alert('Completa al menos un dato del proyecto para guardarlo.')
       return
     }
-    if (!items.length) {
+    if (!allowWithoutItems && !items.length) {
       alert('Agrega al menos un producto.')
       return
     }
@@ -739,7 +1009,7 @@ export default function Page() {
         .from(TABLES.projects)
         .update({
           quote_number: project.numero.trim() || `COT-${Date.now()}`,
-          project_name: project.nombreProyecto.trim(),
+          project_name: project.nombreProyecto.trim() || 'Cotización sin título',
           company_name: project.razonSocial.trim() || project.empresa.trim() || project.cliente.trim(),
           responsible: project.responsable.trim(),
           date: project.fecha,
@@ -766,7 +1036,7 @@ export default function Page() {
         .from(TABLES.projects)
         .insert([{
           quote_number: project.numero.trim() || `COT-${Date.now()}`,
-          project_name: project.nombreProyecto.trim(),
+          project_name: project.nombreProyecto.trim() || 'Cotización sin título',
           company_name: project.razonSocial.trim() || project.empresa.trim() || project.cliente.trim(),
           responsible: project.responsable.trim(),
           date: project.fecha,
@@ -833,7 +1103,14 @@ export default function Page() {
     }
     setSavingProject(false)
     await loadHistory()
-    showToast(editingProjectId ? 'Cotización actualizada.' : 'Cotización guardada.')
+    setSavedQuoteSnapshot(buildQuoteSnapshot(project, items, details, projectId))
+    showToast(successMessage || (editingProjectId ? 'Cotización actualizada.' : 'Cotización guardada.'))
+  }
+  async function saveProjectDraft() {
+    await saveProjectCloud({
+      allowWithoutItems: true,
+      successMessage: editingProjectId ? 'Borrador actualizado.' : 'Borrador guardado.',
+    })
   }
   async function openProjectFromHistory(row) {
     if (!supabase) return
@@ -891,6 +1168,36 @@ export default function Page() {
       tasaUtilidad: Number(d.margin_rate || 0),
       especificacion: d.specification || '',
     })))
+    setSavedQuoteSnapshot(buildQuoteSnapshot({
+      numero: row.numero || '',
+      nombreProyecto: row.nombreProyecto || '',
+      clienteId: row.clienteId || '',
+      cliente: row.cliente || '',
+      empresa: row.empresa || '',
+      responsable: row.responsable || '',
+      telefono: row.telefono || '',
+      nit: row.nit || '',
+      razonSocial: row.razonSocial || row.empresa || '',
+      fecha: String(row.fecha || '').slice(0, 10),
+      validoHasta: row.validoHasta || '',
+      moneda: row.moneda || 'BOB',
+      condicionesPago: row.condicionesPago || '',
+      tiempoEntrega: row.tiempoEntrega || '',
+      observaciones: row.observaciones || '',
+      modoCotizacion: row.modoCotizacion === 'opciones' ? 'opciones' : 'total',
+      descuentoGeneralPct: Number(row.descuentoGeneralPct || 0),
+    }, itemsRes.data || [], (detailsRes.data || []).map((d) => ({
+      id: d.id,
+      itemId: d.project_item_id,
+      tipo: d.type || 'Material',
+      descripcion: d.description || '',
+      proveedor: d.supplier_name || '',
+      unidad: d.unit || 'unidad',
+      cantidad: Number(d.quantity || 0),
+      costoUnitario: Number(d.unit_cost || 0),
+      tasaUtilidad: Number(d.margin_rate || 0),
+      especificacion: d.specification || '',
+    })), row.id))
     setActiveTab('cotizacion')
   }
   async function duplicateProjectFromHistory(row) {
@@ -915,14 +1222,210 @@ export default function Page() {
     if (editingProjectId === id) resetCotizacionActual()
     await loadHistory()
   }
+  async function fetchAllRows(table) {
+    if (!supabase) return []
+    const batchSize = 1000
+    let from = 0
+    let rows = []
+    while (true) {
+      const to = from + batchSize - 1
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .range(from, to)
+      if (error) throw new Error(`Error leyendo ${table}: ${error.message}`)
+      const chunk = data || []
+      rows = rows.concat(chunk)
+      if (chunk.length < batchSize) break
+      from += batchSize
+    }
+    return rows
+  }
+  function sanitizeRows(rows) {
+    return (rows || []).map((row) => {
+      const clean = {}
+      Object.entries(row || {}).forEach(([key, value]) => {
+        if (value === null || value === undefined) {
+          clean[key] = ''
+          return
+        }
+        if (typeof value === 'object') {
+          clean[key] = JSON.stringify(value)
+          return
+        }
+        clean[key] = value
+      })
+      return clean
+    })
+  }
+  function parseSheetRows(rows) {
+    return (rows || []).map((row) => {
+      const clean = {}
+      Object.entries(row || {}).forEach(([key, value]) => {
+        if (value === '') {
+          clean[key] = null
+          return
+        }
+        if (typeof value === 'string') {
+          const trimmed = value.trim()
+          if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+            try {
+              clean[key] = JSON.parse(trimmed)
+              return
+            } catch {}
+          }
+        }
+        clean[key] = value
+      })
+      return clean
+    })
+  }
+  async function exportBackupExcel() {
+    if (!supabase || backupBusy || restoreBusy) return
+    setBackupBusy(true)
+    try {
+      const [clientsRows, projectsRows, itemsRows, detailsRows, resourcesRows] = await Promise.all([
+        fetchAllRows(TABLES.clients),
+        fetchAllRows(TABLES.projects),
+        fetchAllRows(TABLES.items),
+        fetchAllRows(TABLES.details),
+        fetchAllRows(TABLES.resources),
+      ])
+      const { utils, writeFileXLSX } = await import('xlsx')
+      const wb = utils.book_new()
+      utils.book_append_sheet(wb, utils.json_to_sheet(sanitizeRows(clientsRows)), 'clientes')
+      utils.book_append_sheet(wb, utils.json_to_sheet(sanitizeRows(projectsRows)), 'cotizaciones')
+      utils.book_append_sheet(wb, utils.json_to_sheet(sanitizeRows(itemsRows)), 'productos')
+      utils.book_append_sheet(wb, utils.json_to_sheet(sanitizeRows(detailsRows)), 'detalles')
+      utils.book_append_sheet(wb, utils.json_to_sheet(sanitizeRows(resourcesRows)), 'recursos')
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+      writeFileXLSX(wb, `backup-decorazon-${stamp}.xlsx`)
+      showToast('Copia de seguridad descargada.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error desconocido exportando copia.'
+      alert(`No se pudo exportar la copia: ${message}`)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+  function triggerBackupRestore() {
+    if (backupBusy || restoreBusy || addBusy) return
+    backupImportModeRef.current = 'restore'
+    backupInputRef.current?.click()
+  }
+  function triggerBackupAdd() {
+    if (backupBusy || restoreBusy || addBusy) return
+    backupImportModeRef.current = 'add'
+    backupInputRef.current?.click()
+  }
+  async function restoreBackupExcel(file, mode = 'restore') {
+    if (!supabase || !file || restoreBusy || backupBusy || addBusy) return
+    const isRestore = mode === 'restore'
+    const userConfirmed = confirm(
+      isRestore
+        ? 'Esta acción restaurará clientes, cotizaciones, productos, detalles y recursos desde el archivo y reemplazará los datos actuales. ¿Deseas continuar?'
+        : 'Esta acción añadirá datos desde el archivo sin borrar lo actual. Si algún registro tiene el mismo ID, se actualizará. ¿Deseas continuar?'
+    )
+    if (!userConfirmed) return
+    if (isRestore) setRestoreBusy(true)
+    else setAddBusy(true)
+    try {
+      const { read, utils } = await import('xlsx')
+      const buffer = await file.arrayBuffer()
+      const workbook = read(buffer, { type: 'array' })
+      const requiredSheets = ['clientes', 'cotizaciones', 'productos', 'detalles', 'recursos']
+      const missing = requiredSheets.filter((name) => !workbook.SheetNames.includes(name))
+      if (missing.length) {
+        alert(`El archivo no es válido. Faltan hojas: ${missing.join(', ')}`)
+        return
+      }
+      const parsed = {
+        clients: parseSheetRows(utils.sheet_to_json(workbook.Sheets.clientes, { defval: '' })),
+        projects: parseSheetRows(utils.sheet_to_json(workbook.Sheets.cotizaciones, { defval: '' })),
+        items: parseSheetRows(utils.sheet_to_json(workbook.Sheets.productos, { defval: '' })),
+        details: parseSheetRows(utils.sheet_to_json(workbook.Sheets.detalles, { defval: '' })),
+        resources: parseSheetRows(utils.sheet_to_json(workbook.Sheets.recursos, { defval: '' })),
+      }
+      const upsertRows = async (table, rows, label) => {
+        if (!rows.length) return
+        const { error } = await supabase.from(table).upsert(rows, { onConflict: 'id' })
+        if (error) throw new Error(`Error añadiendo ${label}: ${error.message}`)
+      }
+      if (isRestore) {
+        const clearTable = async (table, label) => {
+          const { error } = await supabase.from(table).delete().not('id', 'is', null)
+          if (error) throw new Error(`Error limpiando ${label}: ${error.message}`)
+        }
+        await clearTable(TABLES.details, 'detalles')
+        await clearTable(TABLES.items, 'productos')
+        await clearTable(TABLES.projects, 'cotizaciones')
+        await clearTable(TABLES.clients, 'clientes')
+        await clearTable(TABLES.resources, 'recursos')
+        if (parsed.clients.length) {
+          const { error } = await supabase.from(TABLES.clients).insert(parsed.clients)
+          if (error) throw new Error(`Error restaurando clientes: ${error.message}`)
+        }
+        if (parsed.projects.length) {
+          const { error } = await supabase.from(TABLES.projects).insert(parsed.projects)
+          if (error) throw new Error(`Error restaurando cotizaciones: ${error.message}`)
+        }
+        if (parsed.items.length) {
+          const { error } = await supabase.from(TABLES.items).insert(parsed.items)
+          if (error) throw new Error(`Error restaurando productos: ${error.message}`)
+        }
+        if (parsed.details.length) {
+          const { error } = await supabase.from(TABLES.details).insert(parsed.details)
+          if (error) throw new Error(`Error restaurando detalles: ${error.message}`)
+        }
+        if (parsed.resources.length) {
+          const { error } = await supabase.from(TABLES.resources).insert(parsed.resources)
+          if (error) throw new Error(`Error restaurando recursos: ${error.message}`)
+        }
+      } else {
+        await upsertRows(TABLES.clients, parsed.clients, 'clientes')
+        await upsertRows(TABLES.projects, parsed.projects, 'cotizaciones')
+        await upsertRows(TABLES.items, parsed.items, 'productos')
+        await upsertRows(TABLES.details, parsed.details, 'detalles')
+        await upsertRows(TABLES.resources, parsed.resources, 'recursos')
+      }
+      resetCotizacionActual()
+      await Promise.all([loadResources(), loadClients(), loadHistory()])
+      showToast(isRestore ? 'Copia restaurada correctamente.' : 'Backup añadido correctamente.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Error desconocido restaurando copia.'
+      alert(isRestore ? `No se pudo restaurar la copia: ${message}` : `No se pudo añadir el backup: ${message}`)
+    } finally {
+      if (isRestore) setRestoreBusy(false)
+      else setAddBusy(false)
+      if (backupInputRef.current) backupInputRef.current.value = ''
+    }
+  }
   const showDashboardHeader = activeTab !== 'cotizacion'
+  function handleTabChange(nextTab) {
+    if (nextTab === activeTab) return
+    setActiveTab(nextTab)
+  }
   return (
     <main className="page grid cotizador-theme" style={{ gap: 20 }}>
       {toastMessage ? <div className="toast-notice">{toastMessage}</div> : null}
+      <input
+        ref={backupInputRef}
+        type="file"
+        accept=".xlsx,.xls"
+        style={{ display: 'none' }}
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          if (file) restoreBackupExcel(file, backupImportModeRef.current)
+        }}
+      />
       {showDashboardHeader && (
         <DashboardHero rubro={COMPANY_RUBRO} infoLine={companyInfoLine} />
       )}
-      <TabNav tabs={APP_TABS} activeTab={activeTab} onTabChange={setActiveTab} />
+      <TabNav tabs={APP_TABS} activeTab={activeTab} onTabChange={handleTabChange} />
+      <div className="sync-indicator" key={syncTick}>
+        <span>{getSyncText()}</span>
+        <span className="sync-project">{getEditingProjectText()}</span>
+      </div>
       {activeTab === 'inicio' && (
         <HomeSection
           resources={resources}
@@ -941,13 +1444,15 @@ export default function Page() {
           clients={clients}
           applyClientInProject={applyClientInProject}
           resetCotizacionActual={resetCotizacionActual}
+          onSaveDraft={saveProjectDraft}
+          savingProject={savingProject}
         />
       )}
       {activeTab === 'clientes' && (
         <div className="grid" style={{ gap: 16 }}>
-          <section className="card">
+          <section className="card compact-card">
             <h2>{editingClientId ? 'Editar cliente' : 'Registrar cliente'}</h2>
-            <form className="grid" style={{ gap: 12 }} onSubmit={saveClient}>
+            <form className="grid form-compact" style={{ gap: 10 }} onSubmit={saveClient}>
               <div className="grid grid-3">
                 <div className="field">
                   <label>Cliente</label>
@@ -986,7 +1491,7 @@ export default function Page() {
                   />
                 </div>
               </div>
-              <div className="action-row">
+              <div className="action-row sticky-form-actions">
                 <button className="btn" type="submit">
                   {savingClient ? 'Guardando...' : editingClientId ? 'Guardar cambios' : 'Guardar cliente'}
                 </button>
@@ -1063,34 +1568,32 @@ export default function Page() {
       )}
       {activeTab === 'items' && (
         <div className="grid" style={{ gap: 16 }}>
-          <section className="card">
+          <section className="card compact-card">
             <h2>{editingItemId ? 'Editar producto' : 'Crear producto'}</h2>
-            <form className="grid" style={{ gap: 12 }} onSubmit={saveItemLocal}>
-              <div className="grid grid-2">
-                <div className="field">
-                  <label>Código</label>
-                  <input value={itemForm.codigo} onChange={(e) => setItemForm({ ...itemForm, codigo: e.target.value })} placeholder="ITEM 001" />
+            <form className="grid form-compact" style={{ gap: 10 }} onSubmit={saveItemLocal}>
+              <div className="product-compact-grid">
+                <div className="field field--item">
+                  <label>Ítem</label>
+                  <input value={itemForm.codigo} onChange={(e) => setItemForm({ ...itemForm, codigo: e.target.value })} placeholder="1" />
                 </div>
-                <div className="field">
+                <div className="field field--wide70">
                   <label>Nombre</label>
                   <input value={itemForm.nombre} onChange={(e) => setItemForm({ ...itemForm, nombre: e.target.value })} />
                 </div>
-              </div>
-              <div className="grid grid-3">
-                <div className="field">
+                <div className="field field--wide70">
                   <label>Categoría</label>
                   <input value={itemForm.categoria} onChange={(e) => setItemForm({ ...itemForm, categoria: e.target.value })} />
                 </div>
-                <div className="field">
-                  <label>Cantidad de productos</label>
+                <div className="field field--num">
+                  <label>Cantidad</label>
                   <input type="number" min="1" step="1" value={itemForm.cantidad} onChange={(e) => setItemForm({ ...itemForm, cantidad: e.target.value })} />
                 </div>
-                <div className="field">
-                  <label>Impuesto del producto (%)</label>
+                <div className="field field--num">
+                  <label>Impuesto (%)</label>
                   <input type="number" value={itemForm.tasaImpuesto} onChange={(e) => setItemForm({ ...itemForm, tasaImpuesto: e.target.value })} />
                 </div>
-                <div className="field">
-                  <label>Descuento especial (%)</label>
+                <div className="field field--num">
+                  <label>Descuento (%)</label>
                   <input type="number" min="0" max="100" value={itemForm.descuentoEspecial} onChange={(e) => setItemForm({ ...itemForm, descuentoEspecial: e.target.value })} />
                 </div>
               </div>
@@ -1098,15 +1601,15 @@ export default function Page() {
                 <label>Descripción</label>
                 <textarea rows={3} value={itemForm.descripcion} onChange={(e) => setItemForm({ ...itemForm, descripcion: e.target.value })} />
               </div>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={itemForm.aplicaImpuesto}
-                  onChange={(e) => setItemForm({ ...itemForm, aplicaImpuesto: e.target.checked })}
-                />
-                <span>Este producto incluye impuestos de ley</span>
-              </label>
-              <div className="action-row">
+              <div className="action-row sticky-form-actions">
+                <label className="check-row compact-check">
+                  <input
+                    type="checkbox"
+                    checked={itemForm.aplicaImpuesto}
+                    onChange={(e) => setItemForm({ ...itemForm, aplicaImpuesto: e.target.checked })}
+                  />
+                  <span>Incluye impuestos de ley</span>
+                </label>
                 <button className="btn" type="submit">
                   {editingItemId ? 'Guardar cambios' : 'Agregar producto'}
                 </button>
@@ -1125,17 +1628,19 @@ export default function Page() {
               </div>
             </form>
           </section>
-          <section className="card">
+          <section className="card compact-card">
             <h2>Productos actuales</h2>
             <div className="table-wrap">
-              <table>
+              <table className="compact-table">
                 <thead>
                   <tr>
                     <th>Producto</th>
                     <th style={{ textAlign: 'right' }}>Cantidad</th>
                     <th>Descuento</th>
+                    <th>Precio unit. s/factura</th>
                     <th>Total s/f</th>
                     <th>Impuesto</th>
+                    <th>Precio unit. c/factura</th>
                     <th>Total facturado</th>
                     <th>Acciones</th>
                   </tr>
@@ -1152,15 +1657,17 @@ export default function Page() {
                           {Number(item.cantidad || 1).toLocaleString('es-BO')}
                         </td>
                         <td>{item.descuentoPct ? `${item.descuentoPct}%` : '-'}</td>
+                        <td>{money(item.precioUnitarioSinImpuesto, project.moneda)}</td>
                         <td>{money(item.totalSinFactura, project.moneda)}</td>
                         <td>
                           {item.aplicaImpuesto
                             ? `${Number(item.tasaImpuesto || 0).toLocaleString('es-BO')}% · ${money(item.impuesto, project.moneda)}`
                             : 'No incluye'}
                         </td>
+                        <td>{money(item.precioUnitarioFacturado, project.moneda)}</td>
                         <td>{money(item.total, project.moneda)}</td>
                         <td>
-                          <div className="action-row">
+                          <div className="action-row compact-actions">
                             <button type="button" className="mini-btn success" onClick={() => editItem(item)}>
                               Editar
                             </button>
@@ -1176,7 +1683,7 @@ export default function Page() {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="muted">Aún no agregaste productos.</td>
+                      <td colSpan={9} className="muted">Aún no agregaste productos.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1187,11 +1694,11 @@ export default function Page() {
       )}
       {activeTab === 'subitems' && (
         <div className="grid" style={{ gap: 16 }}>
-          <section className="card">
+          <section className="card compact-card">
             <h2>{editingDetailId ? 'Editar detalle' : 'Crear detalle'}</h2>
-            <form className="grid" style={{ gap: 12 }} onSubmit={saveDetailLocal}>
-              <div className="grid grid-2">
-                <div className="field">
+            <form className="grid form-compact" style={{ gap: 10 }} onSubmit={saveDetailLocal}>
+              <div className="detail-compact-grid">
+                <div className="field field-d-producto">
                   <label>Producto</label>
                   <select value={detailForm.itemId} onChange={(e) => setDetailForm({ ...detailForm, itemId: e.target.value })}>
                     <option value="">selecciona un producto</option>
@@ -1202,7 +1709,7 @@ export default function Page() {
                     ))}
                   </select>
                 </div>
-                <div className="field">
+                <div className="field field-d-tipo">
                   <label>Tipo</label>
                   <select value={detailForm.tipo} onChange={(e) => setDetailForm({ ...detailForm, tipo: e.target.value })}>
                     <option>Material</option>
@@ -1212,40 +1719,36 @@ export default function Page() {
                     <option>Transporte</option>
                   </select>
                 </div>
-              </div>
-              <div className="field">
-                <label>Descripción</label>
-                <input value={detailForm.descripcion} onChange={(e) => setDetailForm({ ...detailForm, descripcion: e.target.value })} />
-              </div>
-              <div className="grid grid-3">
-                <div className="field">
+                <div className="field field-d-descripcion">
+                  <label>Descripción</label>
+                  <input value={detailForm.descripcion} onChange={(e) => setDetailForm({ ...detailForm, descripcion: e.target.value })} />
+                </div>
+                <div className="field field-d-proveedor">
                   <label>Proveedor</label>
                   <input value={detailForm.proveedor} onChange={(e) => setDetailForm({ ...detailForm, proveedor: e.target.value })} />
                 </div>
-                <div className="field">
+                <div className="field field-d-unidad">
                   <label>Unidad</label>
                   <input value={detailForm.unidad} onChange={(e) => setDetailForm({ ...detailForm, unidad: e.target.value })} />
                 </div>
-                <div className="field">
+                <div className="field field-d-cantidad">
                   <label>Cantidad</label>
                   <input type="number" value={detailForm.cantidad} onChange={(e) => setDetailForm({ ...detailForm, cantidad: e.target.value })} />
                 </div>
-              </div>
-              <div className="grid grid-3">
-                <div className="field">
+                <div className="field field-d-costo">
                   <label>Costo unitario</label>
                   <input type="number" value={detailForm.costoUnitario} onChange={(e) => setDetailForm({ ...detailForm, costoUnitario: e.target.value })} />
                 </div>
-                <div className="field">
+                <div className="field field-d-utilidad">
                   <label>Utilidad (%)</label>
                   <input type="number" value={detailForm.tasaUtilidad} onChange={(e) => setDetailForm({ ...detailForm, tasaUtilidad: e.target.value })} />
                 </div>
-                <div className="field">
-                  <label>Especificación</label>
+                <div className="field field-d-observaciones">
+                  <label>Observaciones</label>
                   <input value={detailForm.especificacion} onChange={(e) => setDetailForm({ ...detailForm, especificacion: e.target.value })} />
                 </div>
               </div>
-              <div className="action-row">
+              <div className="action-row sticky-form-actions">
                 <button className="btn" type="submit">
                   {editingDetailId ? 'Guardar cambios' : 'Agregar detalle'}
                 </button>
@@ -1264,14 +1767,15 @@ export default function Page() {
               </div>
             </form>
           </section>
-          <section className="card">
+          <section className="card compact-card">
             <h2>SubProductos actuales</h2>
             <div className="table-wrap">
-              <table>
+              <table className="compact-table">
                 <thead>
                   <tr>
                     <th>Producto</th>
                     <th>Descripción</th>
+                    <th>Observaciones</th>
                     <th>Cantidad</th>
                     <th>Precio unitario</th>
                     <th>Subtotal</th>
@@ -1282,47 +1786,101 @@ export default function Page() {
                   </tr>
                 </thead>
                 <tbody>
-                  {details.length ? (
-                    details.map((row) => {
-                      const item = items.find((x) => x.id === row.itemId)
-                      const cantidad = Number(row.cantidad || 0)
-                      const precioUnitario = Number(row.costoUnitario || 0)
-                      const utilidadPct = Number(row.tasaUtilidad || 0)
-                      const subtotal = cantidad * precioUnitario
-                      const ganancia = subtotal * (utilidadPct / 100)
-                      const total = subtotal + ganancia
+                  {detailGroups.length ? (
+                    detailGroups.map((group) => {
+                      const itemId = group.item?.id || 'sin-item'
+                      const isCollapsed = collapsedDetailGroups[itemId] ?? true
                       return (
-                        <tr key={row.id}>
-                          <td>
-                            <strong>{item?.codigo || '-'}</strong>
-                            <div className="tiny-muted">{item?.nombre || '-'}</div>
-                          </td>
-                          <td>
-                            <strong>{row.descripcion}</strong>
-                            <div className="tiny-muted">{row.proveedor || '-'} · {row.tipo}</div>
-                          </td>
-                          <td>{cantidad} {row.unidad}</td>
-                          <td>{money(precioUnitario, project.moneda)}</td>
-                          <td>{money(subtotal, project.moneda)}</td>
-                          <td>{utilidadPct}%</td>
-                          <td>{money(ganancia, project.moneda)}</td>
-                          <td>{money(total, project.moneda)}</td>
-                          <td>
-                            <div className="action-row">
-                              <button type="button" className="mini-btn success" onClick={() => editDetail(row)}>
-                                Editar
+                        <Fragment key={`group-${itemId}`}>
+                          <tr key={`head-${itemId}`} className="detail-group-head">
+                            <td
+                              colSpan={10}
+                              role="button"
+                              tabIndex={0}
+                              aria-expanded={!isCollapsed}
+                              onClick={() => toggleDetailGroup(itemId)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault()
+                                  toggleDetailGroup(itemId)
+                                }
+                              }}
+                            >
+                              <button
+                                type="button"
+                                className={`group-toggle-btn ${isCollapsed ? '' : 'open'}`}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  toggleDetailGroup(itemId)
+                                }}
+                              >
+                                {isCollapsed ? 'Expandir' : 'Contraer'}
                               </button>
-                              <button type="button" className="mini-btn danger" onClick={() => deleteDetail(row.id)}>
-                                Eliminar
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                              <span className="group-title">
+                                <strong>{group.item?.codigo || '-'}</strong> · {group.item?.nombre || 'Producto sin nombre'}
+                              </span>
+                              <span className="group-meta-chip">{group.rows.length} subproducto(s)</span>
+                              <span className="group-meta-chip strong">Total: {money(group.sums.total, project.moneda)}</span>
+                            </td>
+                          </tr>
+                          {isCollapsed ? null : group.rows.map((row) => {
+                            const cantidad = Number(row.cantidad || 0)
+                            const precioUnitario = Number(row.costoUnitario || 0)
+                            const utilidadPct = Number(row.tasaUtilidad || 0)
+                            const subtotal = cantidad * precioUnitario
+                            const ganancia = subtotal * (utilidadPct / 100)
+                            const total = subtotal + ganancia
+                            return (
+                              <tr key={row.id} className="detail-row">
+                                <td>
+                                  <strong>{group.item?.codigo || '-'}</strong>
+                                  <div className="tiny-muted">{group.item?.nombre || '-'}</div>
+                                </td>
+                                <td>
+                                  <strong>{row.descripcion}</strong>
+                                  <div className="tiny-muted">{row.proveedor || '-'} · {row.tipo}</div>
+                                </td>
+                                <td>{row.especificacion || '-'}</td>
+                                <td>{cantidad} {row.unidad}</td>
+                                <td>{money(precioUnitario, project.moneda)}</td>
+                                <td>{money(subtotal, project.moneda)}</td>
+                                <td>{utilidadPct}%</td>
+                                <td>{money(ganancia, project.moneda)}</td>
+                                <td>{money(total, project.moneda)}</td>
+                                <td>
+                                  <div className="action-row compact-actions">
+                                    <button type="button" className="mini-btn success" onClick={() => editDetail(row)}>
+                                      Editar
+                                    </button>
+                                    <button type="button" className="mini-btn danger" onClick={() => deleteDetail(row.id)}>
+                                      Eliminar
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )
+                          })}
+                          <tr key={`sum-${itemId}`} className="detail-group-total">
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: '#b8f3ff' }}>Subtotal producto</td>
+                            <td />
+                            <td />
+                            <td />
+                            <td />
+                            <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(group.sums.subtotal, project.moneda)}</td>
+                            <td />
+                            <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(group.sums.ganancia, project.moneda)}</td>
+                            <td style={{ fontWeight: 700, color: '#b8f3ff' }}>{money(group.sums.total, project.moneda)}</td>
+                            <td />
+                          </tr>
+                          <tr className="detail-group-gap" aria-hidden="true">
+                            <td colSpan={10} />
+                          </tr>
+                        </Fragment>
                       )
                     })
                   ) : (
                     <tr>
-                      <td colSpan={8} className="muted">Aún no agregaste detalles.</td>
+                      <td colSpan={10} className="muted">Aún no agregaste detalles.</td>
                     </tr>
                   )}
                 </tbody>
@@ -1347,6 +1905,7 @@ export default function Page() {
                       return (
                         <tr>
                           <td style={{ textAlign: 'right', fontWeight: 700, color: '#b8f3ff' }}>Totales</td>
+                          <td />
                           <td />
                           <td />
                           <td />
@@ -1378,6 +1937,10 @@ export default function Page() {
           addResourceToDetail={addResourceToDetail}
           editResource={editResource}
           deleteResource={deleteResource}
+          renameCategoryEverywhere={renameCategoryEverywhere}
+          deleteCategoryEverywhere={deleteCategoryEverywhere}
+          renameSubcategoryEverywhere={renameSubcategoryEverywhere}
+          deleteSubcategoryEverywhere={deleteSubcategoryEverywhere}
         />
       )}
       {activeTab === 'cotizacion' && (
@@ -1403,6 +1966,12 @@ export default function Page() {
           onOpen={openProjectFromHistory}
           onDuplicate={duplicateProjectFromHistory}
           onDelete={deleteProjectFromHistory}
+          onBackupExport={exportBackupExcel}
+          onBackupRestoreClick={triggerBackupRestore}
+          onBackupAddClick={triggerBackupAdd}
+          backupBusy={backupBusy}
+          restoreBusy={restoreBusy}
+          addBusy={addBusy}
         />
       )}
       <style jsx global>{`
@@ -1523,6 +2092,31 @@ export default function Page() {
           grid-template-columns: repeat(9, minmax(0, 1fr));
           gap: 12px;
         }
+        .sync-indicator {
+          justify-self: stretch;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-top: -8px;
+          margin-bottom: 4px;
+          font-size: 0.86rem;
+          font-weight: 700;
+          color: #e9fbff;
+          background: rgba(10, 79, 95, 0.62);
+          border: 1px solid rgba(171, 231, 240, 0.34);
+          border-radius: 999px;
+          padding: 7px 12px;
+        }
+        .sync-project {
+          text-align: right;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          max-width: 62%;
+          color: #d4f7ff;
+          font-weight: 800;
+        }
         .tab-btn {
           appearance: none;
           border: 1px solid var(--dz-border);
@@ -1536,6 +2130,13 @@ export default function Page() {
           transition: .18s ease;
           cursor: pointer;
         }
+        .tab-btn-inner {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          width: 100%;
+        }
         .tab-btn:hover {
           transform: translateY(-1px);
           box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
@@ -1546,6 +2147,28 @@ export default function Page() {
           color: white;
           border-color: transparent;
           box-shadow: 0 10px 22px rgba(17,106,113,0.22);
+        }
+        .tab-btn-items {
+          background: linear-gradient(135deg, #ecfbff 0%, #d7f5ff 100%);
+          border-color: #8ddff4;
+          color: #0f5f80;
+        }
+        .tab-btn-items:hover {
+          border-color: #61cde8;
+          box-shadow: 0 10px 20px rgba(97, 205, 232, 0.22);
+        }
+        .tab-btn-subitems {
+          background: linear-gradient(135deg, #e4f4ff 0%, #cce9ff 100%);
+          border-color: #7fc2f7;
+          color: #155f9c;
+        }
+        .tab-btn-subitems:hover {
+          border-color: #54acef;
+          box-shadow: 0 10px 20px rgba(84, 172, 239, 0.22);
+        }
+        .tab-btn-items.active,
+        .tab-btn-subitems.active {
+          color: #fff;
         }
         .card {
           background: linear-gradient(135deg, rgba(19, 95, 122, 0.95) 0%, rgba(23, 127, 152, 0.92) 58%, rgba(52, 176, 198, 0.9) 100%);
@@ -1562,18 +2185,21 @@ export default function Page() {
         }
         .field {
           display: grid;
-          gap: 8px;
+          gap: 6px;
         }
         .field label {
           color: rgba(255, 255, 255, 0.88);
-          font-size: 0.96rem;
+          font-size: 0.9rem;
           font-weight: 700;
+        }
+        .form-compact .field label {
+          font-size: 0.84rem;
         }
         .cotizador-theme input, .cotizador-theme select, .cotizador-theme textarea {
           width: 100%;
           border: 1px solid rgba(171, 231, 240, 0.34);
           border-radius: 16px;
-          padding: 14px 16px;
+          padding: 10px 12px;
           background: #ffffff !important;
           color: #0f172a !important;
           -webkit-text-fill-color: #0f172a !important;
@@ -1612,7 +2238,7 @@ export default function Page() {
         }
         .cotizador-theme textarea {
           resize: vertical;
-          min-height: 110px;
+          min-height: 86px;
         }
         .btn, .mini-btn {
           appearance: none;
@@ -1649,7 +2275,7 @@ export default function Page() {
           color: #fff;
           font-weight: 800;
           border-radius: 13px;
-          padding: 9px 14px;
+          padding: 8px 10px;
           box-shadow: none;
           border: 1px solid rgba(171, 231, 240, 0.34);
         }
@@ -1678,6 +2304,148 @@ export default function Page() {
           flex-wrap: wrap;
           gap: 10px;
           align-items: center;
+        }
+        .sticky-form-actions {
+          position: sticky;
+          bottom: 6px;
+          z-index: 4;
+          padding: 8px 10px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, rgba(8, 92, 114, 0.92), rgba(17, 118, 144, 0.9));
+          border: 1px solid rgba(171, 231, 240, 0.42);
+          box-shadow: 0 10px 24px rgba(8, 36, 48, 0.25);
+          backdrop-filter: blur(2px);
+          justify-content: flex-start;
+        }
+        .sticky-form-actions .btn {
+          width: auto;
+          flex: 0 0 auto;
+        }
+        .compact-card {
+          padding-top: 14px;
+          padding-bottom: 14px;
+        }
+        .compact-card h2 {
+          margin-bottom: 12px;
+          font-size: 1.66rem;
+        }
+        .compact-table th {
+          padding: 10px 10px;
+          font-size: .84rem;
+        }
+        .compact-table td {
+          padding: 9px 10px;
+          font-size: 0.95rem;
+          line-height: 1.2;
+        }
+        .compact-actions {
+          flex-wrap: nowrap;
+          gap: 6px;
+        }
+        .compact-actions .mini-btn {
+          white-space: nowrap;
+          padding: 7px 9px;
+          font-size: .82rem;
+          border-radius: 10px;
+        }
+        .product-compact-grid {
+          display: grid;
+          grid-template-columns: 78px minmax(220px, 1.35fr) minmax(170px, 1fr) 98px 98px 98px;
+          gap: 10px;
+          align-items: end;
+        }
+        .field--num input {
+          max-width: 98px;
+        }
+        .field--item input {
+          max-width: 78px;
+          text-align: center;
+        }
+        .field--wide70 input {
+          width: 100%;
+        }
+        .form-compact input[type='number'] {
+          max-width: 112px;
+        }
+        .form-compact input[type='date'] {
+          max-width: 170px;
+        }
+        .compact-check {
+          margin-right: 10px;
+          background: rgba(255,255,255,0.08);
+          border: 1px solid rgba(171, 231, 240, 0.34);
+          border-radius: 12px;
+          padding: 8px 10px;
+        }
+        .resources-compact-grid {
+          display: grid;
+          gap: 10px;
+          align-items: end;
+        }
+        .resources-row-1 {
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+        .resources-row-2 {
+          grid-template-columns: minmax(220px, 1.6fr) 120px 130px 170px;
+        }
+        .resources-row-3 {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        .resources-filter-row {
+          display: flex;
+          justify-content: flex-start;
+          margin-bottom: 10px;
+        }
+        .resources-unit input,
+        .resources-cost input,
+        .resources-date input {
+          max-width: 100%;
+        }
+        .detail-compact-grid {
+          display: grid;
+          grid-template-columns: repeat(16, minmax(0, 1fr));
+          gap: 10px;
+          align-items: end;
+        }
+        .field-d-producto {
+          grid-column: span 4;
+        }
+        .field-d-tipo {
+          grid-column: span 4;
+        }
+        .field-d-descripcion {
+          grid-column: span 4;
+        }
+        .field-d-proveedor {
+          grid-column: span 4;
+        }
+        .field-d-unidad {
+          grid-column: span 2;
+        }
+        .field-d-unidad input {
+          max-width: 100%;
+        }
+        .field-d-observaciones {
+          grid-column: span 8;
+          justify-self: stretch;
+        }
+        .field-d-cantidad {
+          grid-column: span 2;
+        }
+        .field-d-costo {
+          grid-column: span 2;
+        }
+        .field-d-utilidad {
+          grid-column: span 2;
+        }
+        .field-d-cantidad input,
+        .field-d-costo input,
+        .field-d-utilidad input {
+          max-width: 100%;
+        }
+        .detail-compact-grid input[type='number'] {
+          max-width: 100% !important;
+          width: 100%;
         }
         .muted,
         .tiny-muted {
@@ -1718,6 +2486,64 @@ export default function Page() {
         }
         tbody tr:hover {
           background: rgba(255, 255, 255, 0.08);
+        }
+        .detail-group-head td {
+          background: linear-gradient(135deg, rgba(18, 108, 129, 0.62), rgba(32, 132, 156, 0.6));
+          border-top: 1px solid rgba(171, 231, 240, 0.42);
+          border-bottom: 1px solid rgba(171, 231, 240, 0.34);
+          padding-top: 16px;
+          padding-bottom: 16px;
+        }
+        .group-toggle-btn {
+          background: rgba(255, 255, 255, 0.16);
+          color: #ffffff;
+          font-weight: 900;
+          border-radius: 999px;
+          padding: 9px 16px;
+          border: 1px solid rgba(171, 231, 240, 0.55);
+          margin-right: 10px;
+        }
+        .group-toggle-btn.open {
+          background: rgba(13, 169, 206, 0.26);
+          border-color: rgba(156, 236, 255, 0.82);
+        }
+        .group-title {
+          font-size: 1.06rem;
+          color: #ffffff;
+          margin-right: 10px;
+        }
+        .group-meta-chip {
+          display: inline-flex;
+          align-items: center;
+          margin-top: 6px;
+          margin-right: 8px;
+          padding: 5px 10px;
+          border-radius: 999px;
+          font-size: 0.88rem;
+          font-weight: 800;
+          color: #d9f7ff;
+          background: rgba(0, 0, 0, 0.15);
+          border: 1px solid rgba(171, 231, 240, 0.35);
+        }
+        .group-meta-chip.strong {
+          color: #ffffff;
+          background: rgba(6, 81, 102, 0.56);
+          border-color: rgba(171, 231, 240, 0.62);
+        }
+        .detail-row td {
+          background: rgba(7, 85, 104, 0.18);
+        }
+        .detail-group-total td {
+          background: rgba(8, 101, 125, 0.5);
+          border-top: 1px solid rgba(171, 231, 240, 0.28);
+          border-bottom: 1px solid rgba(171, 231, 240, 0.36);
+          font-size: 1.02rem;
+        }
+        .detail-group-gap td {
+          padding: 0;
+          height: 10px;
+          border: 0;
+          background: transparent;
         }
         .quote-head,
         .quote-foot {
@@ -1779,6 +2605,36 @@ export default function Page() {
           .quote-head {
             grid-template-columns: 1fr;
           }
+          .product-compact-grid {
+            grid-template-columns: 78px minmax(180px, 1fr) minmax(150px, 1fr) 90px 90px 90px;
+          }
+          .resources-row-1 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+          .resources-row-2 {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+          }
+          .resources-row-3 {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+          }
+          .detail-compact-grid {
+            grid-template-columns: repeat(8, minmax(0, 1fr));
+          }
+          .field-d-producto,
+          .field-d-tipo,
+          .field-d-descripcion,
+          .field-d-proveedor {
+            grid-column: span 4;
+          }
+          .field-d-unidad,
+          .field-d-cantidad,
+          .field-d-costo,
+          .field-d-utilidad {
+            grid-column: span 2;
+          }
+          .field-d-observaciones {
+            grid-column: span 8;
+          }
         }
         @media (max-width: 860px) {
           .page {
@@ -1817,6 +2673,14 @@ export default function Page() {
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 8px;
           }
+          .sync-indicator {
+            margin-top: -2px;
+            margin-bottom: 2px;
+            font-size: 0.8rem;
+          }
+          .sync-project {
+            max-width: 52%;
+          }
           .tab-btn {
             font-size: 0.95rem;
             padding: 12px 10px;
@@ -1840,6 +2704,37 @@ export default function Page() {
             padding: 8px 10px;
             font-size: 0.86rem;
           }
+          .product-compact-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+          }
+          .resources-row-1,
+          .resources-row-2,
+          .resources-row-3 {
+            grid-template-columns: 1fr;
+            gap: 8px;
+          }
+          .detail-compact-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+          }
+          .field-d-producto,
+          .field-d-tipo,
+          .field-d-descripcion,
+          .field-d-proveedor,
+          .field-d-unidad,
+          .field-d-observaciones,
+          .field-d-cantidad,
+          .field-d-costo,
+          .field-d-utilidad {
+            grid-column: span 1;
+          }
+          .field--num input,
+          .field--item input,
+          .form-compact input[type='number'],
+          .form-compact input[type='date'] {
+            max-width: 100%;
+          }
           .cotizador-theme h2 {
             font-size: 1.7rem;
           }
@@ -1857,6 +2752,18 @@ export default function Page() {
           .tabs {
             grid-template-columns: 1fr;
           }
+          .sync-indicator {
+            width: 100%;
+            text-align: left;
+            border-radius: 14px;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+          }
+          .sync-project {
+            max-width: 100%;
+            text-align: left;
+          }
           table {
             min-width: 0;
           }
@@ -1868,6 +2775,10 @@ export default function Page() {
           }
           .action-row {
             gap: 8px;
+          }
+          .sticky-form-actions {
+            bottom: 2px;
+            padding: 7px 8px;
           }
         }
       `}</style>
