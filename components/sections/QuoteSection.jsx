@@ -1,4 +1,4 @@
-﻿import Image from 'next/image'
+import Image from 'next/image'
 import { COMPANY } from '@/lib/company'
 
 export default function QuoteSection({
@@ -17,7 +17,8 @@ export default function QuoteSection({
   safeText,
 }) {
   return (
-    <section className="card">
+    <section className="card print-area">
+      {/* CABECERA */}
       <div className="quote-head">
         <div>
           <Image src="/logo.png" alt="DecoraZon" width={68} height={68} className="quote-logo" />
@@ -37,6 +38,8 @@ export default function QuoteSection({
           <div style={{ color: '#e9fbff' }}><strong style={{ color: '#ffffff' }}>Fecha:</strong> {formatDateDisplay(project.fecha)}</div>
         </div>
       </div>
+
+      {/* TABLA */}
       <div className="table-wrap" style={{ marginTop: 18 }}>
         <table>
           <thead>
@@ -71,29 +74,35 @@ export default function QuoteSection({
           </tbody>
         </table>
       </div>
+
+      {/* PIE */}
       <div className="quote-foot">
         <div className="quote-box">
-          <strong style={{ color: '#ffffff' }}>Condiciones</strong>
-          <div className="muted" style={{ color: '#e9fbff' }}>Pago: {project.condicionesPago || '-'}</div>
-          <div className="muted" style={{ color: '#e9fbff' }}>Entrega: {project.tiempoEntrega || '-'}</div>
-          <div className="muted" style={{ color: '#e9fbff' }}>Observaciones: {project.observaciones || '-'}</div>
-          <div className="muted" style={{ color: '#e9fbff' }}>
+          <strong style={{ color: '#ffffff', fontSize: '1rem' }}>Condiciones</strong>
+          <div style={{ color: '#e9fbff', marginTop: 4 }}>Pago: {project.condicionesPago || '-'}</div>
+          <div style={{ color: '#e9fbff' }}>Entrega: {project.tiempoEntrega || '-'}</div>
+          <div style={{ color: '#e9fbff' }}>Observaciones: {project.observaciones || '-'}</div>
+          <div style={{ color: '#e9fbff', marginTop: 4 }}>
             {itemRows.some((item) => item.aplicaImpuesto) ? 'La cotización incluye impuestos de ley.' : 'La cotización no incluye impuestos de ley.'}
           </div>
           {project.modoCotizacion === 'opciones' && (
-            <div className="muted" style={{ color: '#e9fbff' }}>Los valores mostrados corresponden a opciones independientes. El cliente podra elegir una alternativa.</div>
+            <div style={{ color: '#e9fbff', marginTop: 4, fontStyle: 'italic' }}>Los valores mostrados corresponden a opciones independientes. El cliente podra elegir una alternativa.</div>
           )}
         </div>
         {project.modoCotizacion !== 'opciones' && (
-          <div className="quote-box">
-            <strong style={{ color: '#ffffff', fontSize: '1.5rem' }}>Total general</strong>
-            <div className="muted" style={{ color: '#e9fbff' }}>Total: {money(subtotalProyecto, project.moneda)}</div>
-            <div className="muted" style={{ color: '#e9fbff' }}>Descuento ({Number(descuentoGeneralPct || 0)}%): {money(descuentoGeneralMonto, project.moneda)}</div>
-            <div className="kpi" style={{ fontSize: 34, color: '#ffffff' }}>{money(totalProyecto, project.moneda)}</div>
+          <div className="quote-box" style={{ textAlign: 'right' }}>
+            <strong style={{ color: '#ffffff', fontSize: '1.1rem' }}>Total general</strong>
+            <div style={{ color: '#e9fbff', marginTop: 4 }}>Subtotal: {money(subtotalProyecto, project.moneda)}</div>
+            {descuentoGeneralPct > 0 && (
+              <div style={{ color: '#e9fbff' }}>Descuento ({Number(descuentoGeneralPct || 0)}%): -{money(descuentoGeneralMonto, project.moneda)}</div>
+            )}
+            <div className="kpi" style={{ fontSize: 34, color: '#ffffff', marginTop: 8 }}>{money(totalProyecto, project.moneda)}</div>
           </div>
         )}
       </div>
-      <div className="action-row">
+
+      {/* BOTONES — solo en pantalla, no se imprimen */}
+      <div className="action-row no-print">
         <button type="button" className="btn" onClick={onSave} disabled={savingProject}>
           {savingProject ? 'Guardando...' : editingProjectId ? 'Guardar cambios' : 'Guardar'}
         </button>
@@ -104,4 +113,3 @@ export default function QuoteSection({
     </section>
   )
 }
-

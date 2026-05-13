@@ -399,250 +399,252 @@ export default function Page() {
         import('jspdf-autotable'),
       ])
 
-      const doc = new jsPDF({
-        orientation: 'l',
-        unit: 'mm',
-        format: 'a4',
-      })
+      // Colores
+      const teal      = [21, 95, 122]   // --primary-dark
+      const tealLight = [23, 127, 152]  // --primary
+      const ink       = [24, 33, 47]    // texto oscuro
+      const muted     = [100, 116, 139] // texto secundario
+      const lineColor = [226, 232, 240] // bordes
+      const white     = [255, 255, 255]
+      const bgRow     = [248, 250, 252] // fila alternada
 
-      const pageWidth = doc.internal.pageSize.getWidth()
-      const pageHeight = doc.internal.pageSize.getHeight()
-      const margin = 10
-      const usableWidth = pageWidth - margin * 2
+      const doc = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4' })
+      const PW  = doc.internal.pageSize.getWidth()   // 297
+      const PH  = doc.internal.pageSize.getHeight()  // 210
+      const M   = 12  // margen
 
-      const greenDark = [17, 106, 113]
-      const ink = [20, 33, 61]
-      const grayHead = [110, 110, 110]
-      const line = [60, 60, 60]
-      const white = [255, 255, 255]
-
+      // ---------- LOGO ----------
       const logoDataUrl = await getLogoDataUrl()
-      const incluyeImpuestos = itemRows.some((item) => item.aplicaImpuesto && Number(item.impuesto || 0) > 0)
-      const showTotalGeneral = (project.modoCotizacion || 'total') !== 'opciones'
-
-      const topY = 10
-      const rightW = 78
-      const gap = 10
-      const leftW = usableWidth - rightW - gap
-      const rightX = margin + leftW + gap
-
+      let logoEndX = M
       if (logoDataUrl) {
         try {
           const props = doc.getImageProperties(logoDataUrl)
-          const maxW = 42
-          const maxH = 32
-          const ratio = Math.min(maxW / props.width, maxH / props.height)
-          const imgW = props.width * ratio
-          const imgH = props.height * ratio
-          doc.addImage(logoDataUrl, 'PNG', margin + 2, topY + 4, imgW, imgH)
-        } catch {}
+          const maxH = 22
+          const ratio = maxH / props.height
+          const lw = props.width * ratio
+          doc.addImage(logoDataUrl, 'PNG', M, M, lw, maxH)
+          logoEndX = M + lw + 6
+        } catch { logoEndX = M }
       }
 
-      const textStartX = margin + 46
+      // ---------- NOMBRE EMPRESA ----------
       doc.setFont('helvetica', 'bold')
-      doc.setTextColor(...greenDark)
-      doc.setFontSize(31)
-      doc.text(COMPANY.name || 'DecoraZon', textStartX, topY + 16)
-
-      doc.setTextColor(...grayHead)
-    doc.setFontSize(14)
-      doc.text(COMPANY_RUBRO, textStartX, topY + 25)
-
-      doc.setFillColor(...greenDark)
-    doc.setDrawColor(...line)
-    doc.rect(rightX, topY + 2, rightW, 22, 'FD')
-    doc.setTextColor(...white)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(23)
-      doc.text('COTIZACION', rightX + rightW / 2, topY + 16, { align: 'center' })
-
-      doc.setFillColor(...grayHead)
-    doc.rect(rightX, topY + 36, rightW, 14, 'FD')
-    doc.setTextColor(...white)
-    doc.setFontSize(11)
-      doc.text(`No.: ${safeText(project.numero) || '-'}`, rightX + rightW - 8, topY + 45, { align: 'right' })
-
-      doc.setFillColor(...grayHead)
-    doc.rect(rightX, topY + 54, rightW, 14, 'FD')
-    doc.text(`Fecha:`, rightX + 8, topY + 63)
-      doc.text(`${formatDateDisplay(project.fecha)}`, rightX + rightW - 8, topY + 63, { align: 'right' })
-
-      const infoBoxY = topY + 42
-      const infoBoxH = 34
-      doc.setDrawColor(...line)
-      doc.setFillColor(...white)
-      doc.rect(margin, infoBoxY, leftW - 34, infoBoxH, 'FD')
-      doc.setTextColor(...ink)
-      doc.setFont('helvetica', 'bold')
-      doc.setFontSize(10.5)
-
-      const leftLabelX = margin + 5
-      const leftValueX = margin + 28
-      const rightLabelX = margin + 90
-      const rightValueX = margin + 124
-      const row1Y = infoBoxY + 8
-      const row2Y = infoBoxY + 16
-      const row3Y = infoBoxY + 24
-      const row4Y = infoBoxY + 32
-
-      doc.text('Proyecto:', leftLabelX, row1Y)
-      doc.text('Empresa:', leftLabelX, row2Y)
-      doc.text('Cliente:', leftLabelX, row3Y)
-      doc.text('NIT:', leftLabelX, row4Y)
-      doc.text('Responsable:', rightLabelX, row1Y)
-      doc.text('Teléfono:', rightLabelX, row2Y)
+      doc.setFontSize(22)
+      doc.setTextColor(...teal)
+      doc.text(COMPANY.name, logoEndX, M + 10)
 
       doc.setFont('helvetica', 'normal')
-      doc.text(safeText(project.nombreProyecto) || '-', leftValueX, row1Y)
-      doc.text(safeText(project.razonSocial || project.empresa || project.cliente) || '-', leftValueX, row2Y)
-      doc.text(safeText(project.cliente) || '-', leftValueX, row3Y)
-      doc.text(safeText(project.nit) || '-', leftValueX, row4Y)
-      doc.text(safeText(project.responsable) || '-', rightValueX, row1Y)
-      doc.text(safeText(project.telefono) || '-', rightValueX, row2Y)
+      doc.setFontSize(8)
+      doc.setTextColor(...muted)
+      doc.text(COMPANY.address, logoEndX, M + 16)
+      doc.text(COMPANY.phones.join(' / '), logoEndX, M + 20)
+      doc.text(COMPANY.email, logoEndX, M + 24)
 
-      const tableStartY = 88
-      const head = [['COD.', 'ITEM', 'DESCRIPCION', 'CANT.', 'P. UNITARIO', 'TOTAL']]
+      // ---------- CAJA "COTIZACIÓN" (esquina superior derecha) ----------
+      const boxW = 72
+      const boxH = 32
+      const boxX = PW - M - boxW
+      const boxY = M
 
-      const body = itemRows.map((item, index) => {
-      const row = [
-        safeText(item.codigo) || String(index + 1).padStart(3, '0'),
+      // Fondo teal para el título
+      doc.setFillColor(...teal)
+      doc.roundedRect(boxX, boxY, boxW, 10, 2, 2, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(11)
+      doc.setTextColor(...white)
+      doc.text('COTIZACIÓN', boxX + boxW / 2, boxY + 7, { align: 'center' })
+
+      // Resto de la caja: borde fino, fondo blanco
+      doc.setDrawColor(...lineColor)
+      doc.setFillColor(...white)
+      doc.roundedRect(boxX, boxY + 10, boxW, boxH - 10, 2, 2, 'FD')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(8.5)
+      doc.setTextColor(...ink)
+      const col1 = boxX + 3
+      const col2 = boxX + boxW - 3
+      let ry = boxY + 17
+      const rowGap = 5.5
+      const drawRow = (label, value) => {
+        doc.setFont('helvetica', 'bold')
+        doc.text(label, col1, ry)
+        doc.setFont('helvetica', 'normal')
+        doc.text(String(value || '-'), col2, ry, { align: 'right' })
+        ry += rowGap
+      }
+      drawRow('No.:', safeText(project.numero) || '-')
+      drawRow('Fecha:', formatDateDisplay(project.fecha))
+      if (project.validoHasta) drawRow('Válido hasta:', formatDateDisplay(project.validoHasta))
+
+      // ---------- LÍNEA SEPARADORA ----------
+      const sepY = M + 34
+      doc.setDrawColor(...lineColor)
+      doc.setLineWidth(0.4)
+      doc.line(M, sepY, PW - M, sepY)
+
+      // ---------- INFO CLIENTE ----------
+      const infoY = sepY + 5
+      const colW  = (PW - M * 2) / 3
+      const drawInfo = (label, value, x) => {
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(7.5)
+        doc.setTextColor(...tealLight)
+        doc.text(label.toUpperCase(), x, infoY)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(...ink)
+        doc.setFontSize(8.5)
+        doc.text(safeText(value) || '-', x, infoY + 4.5)
+      }
+      drawInfo('Proyecto',    project.nombreProyecto,              M)
+      drawInfo('Cliente',     project.cliente,                     M + colW)
+      drawInfo('Razón social',project.razonSocial || project.empresa, M + colW * 2)
+      const drawInfo2 = (label, value, x) => {
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(7.5)
+        doc.setTextColor(...tealLight)
+        doc.text(label.toUpperCase(), x, infoY + 10)
+        doc.setFont('helvetica', 'normal')
+        doc.setTextColor(...ink)
+        doc.setFontSize(8.5)
+        doc.text(safeText(value) || '-', x, infoY + 14.5)
+      }
+      drawInfo2('Responsable', project.responsable, M)
+      drawInfo2('Teléfono',    project.telefono,    M + colW)
+      drawInfo2('NIT',         project.nit,         M + colW * 2)
+
+      // ---------- TABLA DE ÍTEMS ----------
+      const tableY = infoY + 20
+      const incluyeImpuestos = itemRows.some((r) => r.aplicaImpuesto && Number(r.impuesto || 0) > 0)
+
+      const head = [['COD.', 'PRODUCTO', 'DESCRIPCIÓN', 'CANT.', 'P. UNITARIO', 'TOTAL']]
+      const body = itemRows.map((item, idx) => [
+        safeText(item.codigo) || String(idx + 1).padStart(2, '0'),
         safeText(item.nombre) || '-',
         safeText(item.descripcion) || '-',
         Number(item.cantidad || 0).toLocaleString('es-BO'),
         formatMoneyPdf(item.precioUnitario || 0, project.moneda),
         formatMoneyPdf(item.total || 0, project.moneda),
-      ]
-      return row
-    })
-
-      const columnStyles = {
-      0: { cellWidth: 18, halign: 'center' },
-      1: { cellWidth: 38 },
-      2: { cellWidth: 132 },
-      3: { cellWidth: 20, halign: 'right' },
-      4: { cellWidth: 30, halign: 'right' },
-      5: { cellWidth: 32, halign: 'right' },
-    }
+      ])
 
       autoTable(doc, {
-      startY: tableStartY,
-      head,
-      body,
-      theme: 'grid',
-      margin: { left: margin, right: margin, top: 10, bottom: 24 },
-      styles: {
-        font: 'helvetica',
-        fontSize: 8.2,
-        cellPadding: 2.2,
-        textColor: ink,
-        lineColor: line,
-        lineWidth: 0.25,
-        valign: 'middle',
-        overflow: 'linebreak',
-      },
-      headStyles: {
-        fillColor: grayHead,
-        textColor: white,
-        fontStyle: 'bold',
-        halign: 'center',
-        valign: 'middle',
-        lineColor: line,
-        lineWidth: 0.25,
-        minCellHeight: 10,
-      },
-      bodyStyles: {
-        minCellHeight: 10,
-      },
-      columnStyles,
-    })
+        startY: tableY,
+        head,
+        body,
+        theme: 'grid',
+        margin: { left: M, right: M, top: M, bottom: 30 },
+        styles: {
+          font: 'helvetica',
+          fontSize: 8,
+          cellPadding: { top: 2.5, bottom: 2.5, left: 2.5, right: 2.5 },
+          textColor: ink,
+          lineColor,
+          lineWidth: 0.25,
+          valign: 'middle',
+          overflow: 'linebreak',
+        },
+        headStyles: {
+          fillColor: teal,
+          textColor: white,
+          fontStyle: 'bold',
+          halign: 'center',
+          fontSize: 8,
+          minCellHeight: 9,
+        },
+        alternateRowStyles: { fillColor: bgRow },
+        bodyStyles: { minCellHeight: 9 },
+        columnStyles: {
+          0: { cellWidth: 16, halign: 'center' },
+          1: { cellWidth: 40 },
+          2: { cellWidth: 'auto' },
+          3: { cellWidth: 18, halign: 'right' },
+          4: { cellWidth: 32, halign: 'right' },
+          5: { cellWidth: 34, halign: 'right', fontStyle: 'bold' },
+        },
+      })
 
-      const tableEndY = doc.lastAutoTable?.finalY || tableStartY + 60
+      const tableEndY = doc.lastAutoTable?.finalY ?? tableY + 40
 
-      if (showTotalGeneral) {
-      const totalLabelY = tableEndY
-      const totalX = pageWidth - margin - 84
-      doc.setFillColor(...greenDark)
-      doc.setDrawColor(...line)
-      doc.rect(totalX, totalLabelY, 46, 12, 'FD')
-      doc.setTextColor(...white)
+      // ---------- TOTALES (derecha) ----------
+      const showTotal = (project.modoCotizacion || 'total') !== 'opciones'
+      let curY = tableEndY + 3
+
+      if (showTotal) {
+        const totX = PW - M - 90
+        const totW = 90
+
+        if (descuentoGeneralPct > 0) {
+          doc.setFont('helvetica', 'normal')
+          doc.setFontSize(8)
+          doc.setTextColor(...muted)
+          doc.text('Subtotal:', totX + 2, curY + 5)
+          doc.text(formatMoneyPdf(subtotalProyecto, project.moneda), PW - M - 2, curY + 5, { align: 'right' })
+          doc.text(`Descuento (${descuentoGeneralPct}%):`, totX + 2, curY + 10)
+          doc.text(`-${formatMoneyPdf(descuentoGeneralMonto, project.moneda)}`, PW - M - 2, curY + 10, { align: 'right' })
+          curY += 8
+        }
+
+        // Caja Total General
+        doc.setFillColor(...teal)
+        doc.roundedRect(totX, curY + 2, totW / 2, 12, 2, 2, 'F')
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(9)
+        doc.setTextColor(...white)
+        doc.text('TOTAL GENERAL', totX + totW / 4, curY + 9.5, { align: 'center' })
+
+        doc.setDrawColor(...lineColor)
+        doc.setFillColor(...white)
+        doc.roundedRect(totX + totW / 2, curY + 2, totW / 2, 12, 2, 2, 'FD')
+        doc.setFont('helvetica', 'bold')
+        doc.setFontSize(10)
+        doc.setTextColor(...teal)
+        doc.text(formatMoneyPdf(totalProyecto, project.moneda), PW - M - 2, curY + 10, { align: 'right' })
+
+        curY += 16
+      }
+
+      // ---------- CONDICIONES Y OBSERVACIONES (izquierda) ----------
+      const footY = Math.max(curY, tableEndY + 3)
+      const footW = PW - M * 2 - (showTotal ? 94 : 0)
+
       doc.setFont('helvetica', 'bold')
-      doc.setFontSize(10)
-      doc.text('TOTAL GENERAL', totalX + 23, totalLabelY + 8, { align: 'center' })
+      doc.setFontSize(8)
+      doc.setTextColor(...teal)
+      doc.text('Condiciones', M, tableEndY + 7)
 
-      doc.setFillColor(...white)
+      doc.setFont('helvetica', 'normal')
       doc.setTextColor(...ink)
-      doc.rect(totalX + 46, totalLabelY, 38, 12, 'FD')
-      doc.setFontSize(10)
-      doc.text(formatMoneyPdf(totalProyecto, project.moneda), totalX + 80, totalLabelY + 8, { align: 'right' })
-    }
-
-      const boxGap = 5
-      const thirdW = (usableWidth - boxGap * 2) / 3
-      const footerBarH = 10
-      let bottomY = tableEndY + (showTotalGeneral ? 14 : 10)
-
-      if (bottomY + 24 + footerBarH + 6 > pageHeight) {
-      doc.addPage('a4', 'l')
-      bottomY = 14
-    }
-
-      doc.setFillColor(...white)
-    doc.setDrawColor(...line)
-    doc.rect(margin, bottomY, thirdW, 24, 'FD')
-    doc.rect(margin + thirdW + boxGap, bottomY, thirdW, 24, 'FD')
-    doc.rect(margin + (thirdW + boxGap) * 2, bottomY, thirdW, 24, 'FD')
-
-    doc.setTextColor(...ink)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(10)
-    doc.text('Condiciones', margin + 6, bottomY + 7)
-    doc.text('Observaciones', margin + thirdW + boxGap + 6, bottomY + 7)
-
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8.4)
       const condLines = [
-      `Forma de pago: ${safeText(project.condicionesPago) || '-'}`,
-      `Tiempo de entrega: ${safeText(project.tiempoEntrega) || '-'}`,
-      incluyeImpuestos ? 'La cotización incluye impuestos de ley.' : 'La cotización no incluye impuestos de ley.',
-    ]
-      const condText = doc.splitTextToSize(condLines.join('\n'), thirdW - 12)
-      doc.text(condText, margin + 6, bottomY + 13)
+        `Forma de pago: ${safeText(project.condicionesPago) || '-'}`,
+        `Tiempo de entrega: ${safeText(project.tiempoEntrega) || '-'}`,
+        incluyeImpuestos ? 'Incluye impuestos de ley.' : 'No incluye impuestos de ley.',
+      ]
+      if (safeText(project.observaciones)) condLines.push(`Obs.: ${safeText(project.observaciones)}`)
+      if (safeText(project.validoHasta)) condLines.push(`Validez: ${formatDateDisplay(project.validoHasta)}`)
 
-      const obsLines = [safeText(project.observaciones) || '-']
-    if (safeText(project.validoHasta)) {
-      obsLines.push(`Validez de la oferta: ${formatDateDisplay(project.validoHasta)}`)
-    }
-    if (!showTotalGeneral) {
-      obsLines.push('El cliente podrá elegir una alternativa.')
-    }
-      const obsText = doc.splitTextToSize(obsLines.join('\n'), thirdW - 12)
-      doc.text(obsText, margin + thirdW + boxGap + 6, bottomY + 13)
+      const condText = doc.splitTextToSize(condLines.join('  ·  '), footW - 4)
+      doc.text(condText, M, tableEndY + 12)
 
-      const sigX = margin + (thirdW + boxGap) * 2
-    doc.setFont('helvetica', 'normal')
-    doc.line(sigX + 12, bottomY + 17, sigX + thirdW - 12, bottomY + 17)
-    doc.setFont('helvetica', 'bold')
-    doc.text('Tina Rodriguez', sigX + thirdW / 2, bottomY + 22, { align: 'center' })
+      // ---------- PIE DE PÁGINA ----------
+      doc.setFillColor(...teal)
+      doc.rect(0, PH - 8, PW, 8, 'F')
+      doc.setFont('helvetica', 'bold')
+      doc.setFontSize(7.5)
+      doc.setTextColor(...white)
+      const footerParts = [
+        safeText(COMPANY.address),
+        COMPANY.phones.join(' / '),
+        COMPANY.email,
+      ].filter(Boolean)
+      doc.text(footerParts.join('   ·   '), PW / 2, PH - 2.5, { align: 'center' })
 
-      doc.setFillColor(...greenDark)
-    doc.rect(0, pageHeight - 10, pageWidth, 10, 'F')
-    doc.setTextColor(...white)
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.4)
-      const footerText = [
-      safeText(COMPANY.address),
-      safeText((COMPANY.phones || []).join(' / ')),
-      safeText(COMPANY.email),
-      'La Paz - Bolivia',
-    ].filter(Boolean).join(' · ')
-      doc.text(footerText, pageWidth / 2, pageHeight - 3.4, { align: 'center' })
+      // ---------- GUARDAR ----------
+      const safeNum = (safeText(project.numero) || 'cotizacion').replace(/[^\w\-]+/g, '_')
+      doc.save(`Cotizacion_${safeNum}.pdf`)
 
-      const safeNumber = (safeText(project.numero) || 'cotizacion').replace(/[^\w\-]+/g, '_')
-      doc.save(`${safeNumber}.pdf`)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Error desconocido al generar PDF.'
-      console.error('Error generando PDF:', error)
-      alert(`No se pudo generar el PDF: ${message}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Error desconocido'
+      console.error('Error generando PDF:', err)
+      alert(`No se pudo generar el PDF: ${msg}`)
     }
   }
   async function saveResource(e) {
