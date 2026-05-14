@@ -1,0 +1,29 @@
+
+> decorazon-cotizador@0.1.0 dev
+> next dev
+
+   ▲ Next.js 15.5.14
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.0.6:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 2.3s
+ ○ Compiling / ...
+ ✓ Compiled / in 7.1s (1211 modules)
+ GET / 200 in 7771ms
+ GET / 200 in 104ms
+ GET / 200 in 70ms
+ GET / 200 in 98ms
+ GET / 200 in 106ms
+ GET / 200 in 164ms
+ GET / 200 in 135ms
+ ✓ Compiled in 1745ms (1197 modules)
+ ✓ Compiled in 329ms (1211 modules)
+ GET / 200 in 149ms
+ GET / 200 in 342ms
+ ⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+ GET / 200 in 87ms
+ GET / 200 in 68ms
+ ✓ Compiled in 1799ms (1197 modules)
+ ✓ Compiled in 479ms (1197 modules)

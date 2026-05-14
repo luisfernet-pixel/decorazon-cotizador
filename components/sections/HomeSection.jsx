@@ -74,7 +74,7 @@
         <section className="dash-block">
           <h2 className="dash-title">Materiales MÃ¡s Usados</h2>
           {topMaterials.length ? (
-            <div className="table-wrap dash-table">
+            <div className="table-wrap tabla-container dash-table dash-table-desktop">
               <table>
                 <thead>
                   <tr>
@@ -104,7 +104,7 @@
             <div className="empty-note">AÃºn no hay subÃ­tems para calcular uso. Te muestro recursos destacados por costo.</div>
           )}
           {!topMaterials.length && (
-            <div className="table-wrap dash-table" style={{ marginTop: 10 }}>
+            <div className="table-wrap tabla-container dash-table dash-table-desktop" style={{ marginTop: 10 }}>
               <table>
                 <thead>
                   <tr>
@@ -127,12 +127,35 @@
               </table>
             </div>
           )}
+          <div className="dash-mobile-list">
+            {topMaterials.length ? topMaterials.map((row, index) => (
+              <article key={`topm-${row.descripcion}-${index}`} className="dash-mobile-card">
+                <h3>{row.descripcion}</h3>
+                <div className="dash-mobile-meta">
+                  <span>Medida: {row.especificacion}</span>
+                  <span>Proveedor: {row.proveedor}</span>
+                  <span>Usos: {row.apariciones}</span>
+                  <span>Cantidad: {row.cantidadTotal.toLocaleString('es-BO')} {row.unidad}</span>
+                  <span>Subtotal base: {money(row.subtotal || 0)}</span>
+                </div>
+              </article>
+            )) : resourceHighlights.map((row) => (
+              <article key={`resh-${row.id}`} className="dash-mobile-card">
+                <h3>{row.nombre || '-'}</h3>
+                <div className="dash-mobile-meta">
+                  <span>Categoria: {row.categoria || '-'}</span>
+                  <span>Proveedor: {row.proveedor || '-'}</span>
+                  <span>Costo unitario: {money(row.costo || 0)}</span>
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
 
         <div className="grid grid-2 dash-bottom-grid">
           <section className="dash-block dash-bottom-card">
             <h2 className="dash-title">Ãšltimos Clientes</h2>
-            <div className="table-wrap dash-table">
+            <div className="table-wrap tabla-container dash-table dash-table-desktop">
               <table className="clients-table">
                 <colgroup>
                   <col style={{ width: '34%' }} />
@@ -163,11 +186,22 @@
                 </tbody>
               </table>
             </div>
+            <div className="dash-mobile-list">
+              {latestClients.length ? latestClients.map((row) => (
+                <article key={`dash-client-${row.id}`} className="dash-mobile-card">
+                  <h3>{row.cliente || '-'}</h3>
+                  <div className="dash-mobile-meta">
+                    <span>Responsable: {row.responsable || '-'}</span>
+                    <span>Telefono: {row.telefono || '-'}</span>
+                  </div>
+                </article>
+              )) : <div className="empty-note">AÃºn no hay clientes registrados.</div>}
+            </div>
           </section>
 
           <section className="dash-block dash-bottom-card">
             <h2 className="dash-title">Ãšltimas Cotizaciones</h2>
-            <div className="table-wrap dash-table">
+            <div className="table-wrap tabla-container dash-table dash-table-desktop">
               <table className="quotes-table">
                 <colgroup>
                   <col style={{ width: '12%' }} />
@@ -200,6 +234,18 @@
                   )}
                 </tbody>
               </table>
+            </div>
+            <div className="dash-mobile-list">
+              {latestQuotes.length ? latestQuotes.map((row) => (
+                <article key={`dash-quote-${row.id}`} className="dash-mobile-card">
+                  <h3>{row.nombreProyecto || '-'}</h3>
+                  <div className="dash-mobile-meta">
+                    <span>N°: {row.numero || '-'}</span>
+                    <span>Cliente: {row.cliente || '-'}</span>
+                    <span>Fecha: {String(row.fecha || '').slice(0, 10) || '-'}</span>
+                  </div>
+                </article>
+              )) : <div className="empty-note">AÃºn no hay cotizaciones guardadas.</div>}
             </div>
           </section>
         </div>
@@ -300,14 +346,15 @@
           min-height: 0;
         }
         .dash-bottom-card .dash-table :global(table) {
-          table-layout: fixed;
-          min-width: 0;
+          table-layout: auto;
+          min-width: 720px;
+          white-space: nowrap;
         }
         .dash-bottom-card .dash-table :global(th),
         .dash-bottom-card .dash-table :global(td) {
-          white-space: normal;
-          overflow-wrap: anywhere;
-          word-break: break-word;
+          white-space: nowrap;
+          overflow-wrap: normal;
+          word-break: normal;
         }
         @media (max-width: 1200px) {
           .dash-bottom-grid {
@@ -316,6 +363,37 @@
         }
         .empty-note {
           color: rgba(255, 255, 255, 0.88);
+        }
+        .dash-mobile-list {
+          display: none;
+          gap: 8px;
+        }
+        .dash-mobile-card {
+          border: 1px solid rgba(126, 205, 224, 0.45);
+          background: rgba(16, 102, 129, 0.58);
+          border-radius: 12px;
+          padding: 10px 12px;
+          display: grid;
+          gap: 6px;
+        }
+        .dash-mobile-card h3 {
+          margin: 0;
+          color: #fff;
+          font-size: 1rem;
+        }
+        .dash-mobile-meta {
+          display: grid;
+          gap: 3px;
+          color: #dff7ff;
+          font-size: .88rem;
+        }
+        @media (max-width: 1024px) {
+          .dash-table-desktop {
+            display: none;
+          }
+          .dash-mobile-list {
+            display: grid;
+          }
         }
       `}</style>
     </div>

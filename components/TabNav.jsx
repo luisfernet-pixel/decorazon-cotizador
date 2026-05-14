@@ -1,4 +1,4 @@
-import { Boxes, FileText, FolderKanban, History, Home, ListTree, LogOut, PackageSearch, Users } from 'lucide-react'
+import { BookOpen, FileText, History, LogOut, Users } from 'lucide-react'
 
 export default function TabNav({ tabs, activeTab, onTabChange }) {
   const portalUrl = process.env.NEXT_PUBLIC_PORTAL_URL || "https://decorazon-sistema.vercel.app/";
@@ -9,20 +9,16 @@ export default function TabNav({ tabs, activeTab, onTabChange }) {
     textAlign: "center",
   };
   const tabIcons = {
-    inicio: Home,
-    proyecto: FolderKanban,
-    clientes: Users,
-    items: Boxes,
-    subitems: ListTree,
-    recursos: PackageSearch,
     cotizacion: FileText,
+    clientes: Users,
     historial: History,
+    recursos: BookOpen,
   }
 
   return (
     <div className="tabs">
       {tabs.map(([id, label]) => {
-        const Icon = tabIcons[id] || Home
+        const Icon = tabIcons[id] || FileText
         return (
           <button
             key={id}

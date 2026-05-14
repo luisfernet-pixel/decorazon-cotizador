@@ -1,6 +1,9 @@
 'use client'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Fragment } from 'react'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { ListChecks, Package2, PlusCircle, Save } from 'lucide-react'
 import { COMPANY } from '@/lib/company'
 import { getCompanyInfoLine } from '@/lib/company-format'
 import { TABLES } from '@/lib/db-constants'
@@ -14,6 +17,7 @@ import {
 } from '@/lib/initial-state'
 import { formatMoneyPdf, getLogoDataUrl } from '@/lib/pdf-utils'
 import { parseProjectNotes, serializeProjectNotes } from '@/lib/project-notes'
+import { INITIAL_RESOURCE_CATEGORIES, INITIAL_SUPPLIERS, makeResourceSnapshot, normalizeResourceKind, parseJsonObject } from '@/lib/resource-master'
 import { resourceMeta } from '@/lib/resource-meta'
 import { supabase } from '@/lib/supabase'
 import { BRAND, COMPANY_RUBRO } from '@/lib/theme'
@@ -24,15 +28,21 @@ import { HistorySection, HomeSection, ProjectSection, QuoteSection, ResourcesSec
 import TabNav from '@/components/TabNav'
 const initialItem = createInitialItem(COMPANY.defaultTaxRate ?? 19)
 const initialDetail = createInitialDetail(COMPANY.defaultMarginRate ?? 100)
-const QUOTE_EDIT_TABS = ['proyecto', 'items', 'subitems', 'cotizacion']
+const QUOTE_EDIT_TABS = ['proyecto', 'items', 'subitems', 'biblioteca', 'resumen', 'pdf']
 export default function Page() {
-  const [activeTab, setActiveTab] = useState('inicio')
+  const [activeTab, setActiveTab] = useState('cotizacion')
+  const [quoteStep, setQuoteStep] = useState('proyecto')
+  const [pendingExternalTab, setPendingExternalTab] = useState(null)
   const [project, setProject] = useState(() => createInitialProject())
   const [resourceForm, setResourceForm] = useState(initialResource)
   const [itemForm, setItemForm] = useState(initialItem)
   const [detailForm, setDetailForm] = useState(initialDetail)
   const [clientForm, setClientForm] = useState(initialClient)
   const [resources, setResources] = useState([])
+  const [resourceCategories, setResourceCategories] = useState([])
+  const [suppliers, setSuppliers] = useState([])
+  const [priceHistory, setPriceHistory] = useState([])
+  const [resourceMasterReady, setResourceMasterReady] = useState(false)
   const [clients, setClients] = useState([])
   const [history, setHistory] = useState([])
   const [items, setItems] = useState([])
@@ -85,9 +95,8 @@ export default function Page() {
     if (!editingProjectId && !projectName && !responsible) return 'Sin proyecto en edición'
     return `${quoteNumber} · ${projectName} · ${responsible}`
   }
-  function buildQuoteSnapshot(projectArg, itemsArg, detailsArg, editingProjectIdArg) {
+  function buildQuoteSnapshot(projectArg, itemsArg, detailsArg) {
     return JSON.stringify({
-      editingProjectId: editingProjectIdArg || null,
       project: {
         numero: projectArg.numero || '',
         nombreProyecto: projectArg.nombreProyecto || '',
@@ -133,12 +142,92 @@ export default function Page() {
     })
   }
   const currentQuoteSnapshot = useMemo(
-    () => buildQuoteSnapshot(project, items, details, editingProjectId),
-    [project, items, details, editingProjectId]
+    () => buildQuoteSnapshot(project, items, details),
+    [project, items, details]
   )
   const hasUnsavedQuoteChanges = savedQuoteSnapshot !== null && currentQuoteSnapshot !== savedQuoteSnapshot
   async function loadResources() {
     if (!supabase) return
+    const [
+      categoriesRes,
+      templatesRes,
+      variantsRes,
+      suppliersRes,
+      pricesRes,
+      historyRes,
+    ] = await Promise.all([
+      supabase.from(TABLES.resourceCategories).select('*').order('sort_order', { ascending: true }).order('name', { ascending: true }),
+      supabase.from(TABLES.resourceTemplates).select('*').order('created_at', { ascending: false }),
+      supabase.from(TABLES.resourceVariants).select('*').order('created_at', { ascending: false }),
+      supabase.from(TABLES.suppliers).select('*').order('name', { ascending: true }),
+      supabase.from(TABLES.supplierPrices).select('*').order('updated_at', { ascending: false }),
+      supabase.from(TABLES.supplierPriceHistory).select('*').order('changed_at', { ascending: false }).limit(120),
+    ])
+
+    if (!categoriesRes.error && !templatesRes.error && !variantsRes.error && !suppliersRes.error && !pricesRes.error) {
+      const categories = categoriesRes.data || []
+      const templates = templatesRes.data || []
+      const variants = variantsRes.data || []
+      const supplierRows = suppliersRes.data || []
+      const prices = pricesRes.data || []
+      const categoriesById = new Map(categories.map((row) => [row.id, row]))
+      const templatesById = new Map(templates.map((row) => [row.id, row]))
+      const suppliersById = new Map(supplierRows.map((row) => [row.id, row]))
+      const pricesByVariant = prices.reduce((acc, price) => {
+        acc[price.resource_variant_id] = acc[price.resource_variant_id] || []
+        acc[price.resource_variant_id].push(price)
+        return acc
+      }, {})
+
+      const mapped = variants.flatMap((variant) => {
+        const template = templatesById.get(variant.resource_template_id) || {}
+        const category = categoriesById.get(template.category_id) || {}
+        const parentCategory = category.parent_id ? categoriesById.get(category.parent_id) : null
+        const variantPrices = pricesByVariant[variant.id] || []
+        const rows = variantPrices.length ? variantPrices : [null]
+        return rows.map((price) => {
+          const supplier = price ? suppliersById.get(price.supplier_id) || {} : {}
+          const attrs = parseJsonObject(variant.attributes_json, {})
+          return {
+            id: price?.id || variant.id,
+            source: 'master',
+            resourceTemplateId: template.id || '',
+            resourceVariantId: variant.id,
+            supplierPriceId: price?.id || '',
+            supplierId: supplier.id || '',
+            categoryId: category.id || '',
+            tipo: normalizeResourceKind(template.kind),
+            categoria: category.name || parentCategory?.name || '-',
+            parentCategory: parentCategory?.name || (category.parent_id ? '-' : category.name || ''),
+            subcategoria: parentCategory ? category.name : '',
+            nombre: template.name || '-',
+            variante: variant.name || 'General',
+            especificacion: Object.entries(attrs).filter(([, value]) => value).map(([key, value]) => `${key}: ${value}`).join(' | '),
+            attributes: attrs,
+            unidad: variant.unit || template.base_unit || 'unidad',
+            proveedor: supplier.name || '-',
+            costo: Number(price?.cost || 0),
+            currency: price?.currency || 'BOB',
+            includesTax: !!price?.includes_tax,
+            preferred: !!price?.is_preferred,
+            active: price ? !!price.active && !!variant.active && !!template.active && category.active !== false : !!variant.active,
+            fechaActualizacion: price?.last_checked_at || price?.effective_from || price?.updated_at || variant.updated_at || '',
+            effectiveFrom: price?.effective_from || '',
+            stale: price?.last_checked_at ? (Date.now() - new Date(price.last_checked_at).getTime()) > 1000 * 60 * 60 * 24 * 60 : true,
+            notes: price?.notes || template.description || '',
+          }
+        })
+      })
+
+      setResourceCategories(categories)
+      setSuppliers(supplierRows)
+      setPriceHistory(historyRes.data || [])
+      setResources(mapped)
+      setResourceMasterReady(true)
+      markSyncedNow()
+      return
+    }
+
     const { data, error } = await supabase
       .from(TABLES.resources)
       .select('*')
@@ -151,20 +240,31 @@ export default function Page() {
       const meta = resourceMeta(row)
       return {
         id: row.id,
+        source: 'legacy',
         tipo: meta.type || '-',
         categoria: meta.category || '-',
         subcategoria: meta.subcategory || '',
         espesor: meta.thickness || '',
         tamano: meta.size || '',
         nombre: row.name || '-',
+        variante: [row.name, meta.thickness, meta.size].filter(Boolean).join(' ') || 'General',
         especificacion: row.specification || '',
         unidad: row.unit || '-',
         proveedor: meta.supplier || '-',
         costo: Number(row.base_cost || 0),
+        currency: row.currency || 'BOB',
+        includesTax: false,
+        preferred: true,
+        active: row.is_active !== false,
         fechaActualizacion: row.last_price_update || '',
+        stale: row.last_price_update ? (Date.now() - new Date(row.last_price_update).getTime()) > 1000 * 60 * 60 * 24 * 60 : true,
       }
     })
+    setResourceCategories(INITIAL_RESOURCE_CATEGORIES.map((row, index) => ({ id: `${row.parent}-${row.name}`, ...row, sort_order: index + 1, active: true })))
+    setSuppliers(INITIAL_SUPPLIERS.map((name) => ({ id: name, name, active: true })))
+    setPriceHistory([])
     setResources(mapped)
+    setResourceMasterReady(false)
     markSyncedNow()
   }
   async function loadHistory() {
@@ -210,7 +310,7 @@ export default function Page() {
     const { data, error } = await supabase
       .from(TABLES.clients)
       .select('*')
-      .order('created_at', { ascending: false })
+      .order('client_name', { ascending: true })
     if (error) {
       alert('Error leyendo clientes: ' + error.message)
       return
@@ -244,9 +344,9 @@ export default function Page() {
   }, [])
   useEffect(() => {
     if (savedQuoteSnapshot === null) {
-      setSavedQuoteSnapshot(buildQuoteSnapshot(project, items, details, editingProjectId))
+      setSavedQuoteSnapshot(buildQuoteSnapshot(project, items, details))
     }
-  }, [savedQuoteSnapshot, project, items, details, editingProjectId])
+  }, [savedQuoteSnapshot, project, items, details])
   useEffect(() => {
     return () => {
       if (toastTimeoutRef.current) window.clearTimeout(toastTimeoutRef.current)
@@ -384,7 +484,7 @@ export default function Page() {
     setEditingDetailId(null)
     setItemForm(initialItem)
     setDetailForm(initialDetail)
-    setSavedQuoteSnapshot(buildQuoteSnapshot(createInitialProject(), [], [], null))
+    setSavedQuoteSnapshot(buildQuoteSnapshot(createInitialProject(), [], []))
   }
 
   async function downloadPdf() {
@@ -393,11 +493,6 @@ export default function Page() {
         alert('Primero agrega al menos un producto.')
         return
       }
-
-      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
-        import('jspdf'),
-        import('jspdf-autotable'),
-      ])
 
       // Colores
       const teal      = [21, 95, 122]   // --primary-dark
@@ -689,6 +784,521 @@ export default function Page() {
     await loadResources()
     showToast(editingResourceId ? 'Recurso actualizado.' : 'Recurso guardado.')
   }
+  async function findOrCreateCategory(name, kind, parentId = null) {
+    const cleanName = String(name || '').trim()
+    if (!cleanName) return null
+    const existing = await supabase
+      .from(TABLES.resourceCategories)
+      .select('*')
+      .eq('name', cleanName)
+      .maybeSingle()
+    if (existing.data) return existing.data
+    const inserted = await supabase
+      .from(TABLES.resourceCategories)
+      .insert([{ name: cleanName, kind: normalizeResourceKind(kind), parent_id: parentId, active: true }])
+      .select()
+      .single()
+    if (inserted.error) throw inserted.error
+    return inserted.data
+  }
+  async function findOrCreateSupplier(name) {
+    const cleanName = String(name || '').trim()
+    if (!cleanName) return null
+    const existing = await supabase
+      .from(TABLES.suppliers)
+      .select('*')
+      .eq('name', cleanName)
+      .maybeSingle()
+    if (existing.data) return existing.data
+    const inserted = await supabase
+      .from(TABLES.suppliers)
+      .insert([{ name: cleanName, active: true }])
+      .select()
+      .single()
+    if (inserted.error) throw inserted.error
+    return inserted.data
+  }
+  async function saveAdvancedResource(draft) {
+    if (!supabase) return
+    if (!resourceMasterReady) {
+      alert('Primero aplica la migracion de recursos maestros en Supabase. Mientras tanto la app mantiene la tabla antigua en modo compatible.')
+      return
+    }
+    const templateName = String(draft.templateName || '').trim()
+    if (!templateName) {
+      alert('No se puede guardar un recurso sin nombre.')
+      return
+    }
+    const kind = normalizeResourceKind(draft.kind)
+    const parentName = String(draft.parentCategory || '').trim() || (kind === 'Material' ? 'Materiales' : 'Servicios')
+    const categoryName = String(draft.categoryName || '').trim()
+    if (!categoryName) {
+      alert('Selecciona o crea una subcategoria.')
+      return
+    }
+    const variants = (draft.variants || []).filter((variant) => variant.active !== false)
+    if (!variants.length) {
+      alert('Debe existir al menos una variante activa. Si no hay atributos, usa la variante General.')
+      return
+    }
+    if (variants.some((variant) => !String(variant.unit || '').trim())) {
+      alert('No se puede guardar una variante sin unidad.')
+      return
+    }
+    const badPrice = (draft.prices || []).find((price) => Number(price.cost || 0) < 0)
+    if (badPrice) {
+      alert('No se permiten precios negativos.')
+      return
+    }
+    setSavingResource(true)
+    try {
+      const parent = await findOrCreateCategory(parentName, kind)
+      const category = await findOrCreateCategory(categoryName, kind, parent?.id || null)
+      const templateInsert = await supabase
+        .from(TABLES.resourceTemplates)
+        .insert([{
+          category_id: category.id,
+          kind,
+          name: templateName,
+          description: String(draft.description || '').trim(),
+          base_unit: String(draft.baseUnit || '').trim() || 'unidad',
+          active: draft.active !== false,
+        }])
+        .select()
+        .single()
+      if (templateInsert.error) throw templateInsert.error
+      const template = templateInsert.data
+
+      for (let i = 0; i < (draft.attributes || []).length; i++) {
+        const attr = draft.attributes[i]
+        const attrName = String(attr.name || '').trim()
+        if (!attrName) continue
+        const attrInsert = await supabase
+          .from(TABLES.resourceAttributes)
+          .insert([{ resource_template_id: template.id, name: attrName, sort_order: i + 1 }])
+          .select()
+          .single()
+        if (attrInsert.error) throw attrInsert.error
+        const values = (attr.values || []).map((value, index) => ({
+          attribute_id: attrInsert.data.id,
+          value: String(value || '').trim(),
+          sort_order: index + 1,
+        })).filter((row) => row.value)
+        if (values.length) {
+          const valuesInsert = await supabase.from(TABLES.resourceAttributeValues).insert(values)
+          if (valuesInsert.error) throw valuesInsert.error
+        }
+      }
+
+      for (const draftVariant of variants) {
+        const variantInsert = await supabase
+          .from(TABLES.resourceVariants)
+          .insert([{
+            resource_template_id: template.id,
+            name: String(draftVariant.name || '').trim() || `${templateName} General`,
+            sku: String(draftVariant.sku || '').trim() || null,
+            unit: String(draftVariant.unit || '').trim(),
+            attributes_json: draftVariant.attributes || {},
+            active: draftVariant.active !== false,
+          }])
+          .select()
+          .single()
+        if (variantInsert.error) throw variantInsert.error
+
+        const pricesForVariant = (draft.prices || []).filter((price) => price.variantKey === draftVariant.key)
+        for (const price of pricesForVariant) {
+          const supplier = await findOrCreateSupplier(price.supplierName)
+          if (!supplier) {
+            alert('No se puede guardar un precio sin proveedor.')
+            continue
+          }
+          const priceInsert = await supabase.from(TABLES.supplierPrices).insert([{
+            resource_variant_id: variantInsert.data.id,
+            supplier_id: supplier.id,
+            cost: Number(price.cost || 0),
+            currency: 'BOB',
+            includes_tax: !!price.includesTax,
+            effective_from: price.effectiveFrom || new Date().toISOString().slice(0, 10),
+            last_checked_at: price.lastCheckedAt || new Date().toISOString().slice(0, 10),
+            notes: String(price.notes || '').trim(),
+            active: true,
+          }])
+          if (priceInsert.error) throw priceInsert.error
+        }
+      }
+      await loadResources()
+      showToast('Recurso maestro guardado con variantes y precios.')
+    } catch (err) {
+      alert('Error guardando recurso maestro: ' + (err?.message || 'Error desconocido'))
+    } finally {
+      setSavingResource(false)
+    }
+  }
+  async function saveSupplierFromResources(payload) {
+    if (!supabase || !resourceMasterReady) return
+    const name = String(payload?.name || '').trim()
+    if (!name) {
+      alert('Escribe el nombre del proveedor.')
+      return
+    }
+    const rowPayload = {
+      name,
+      phone: String(payload.phone || '').trim(),
+      notes: String(payload.notes || '').trim(),
+      active: payload?.active !== false,
+    }
+    const result = payload?.id
+      ? await supabase.from(TABLES.suppliers).update(rowPayload).eq('id', payload.id)
+      : await supabase.from(TABLES.suppliers).insert([rowPayload])
+    if (result.error) {
+      alert('Error guardando proveedor: ' + result.error.message)
+      return
+    }
+    await loadResources()
+    showToast(payload?.id ? 'Proveedor actualizado.' : 'Proveedor guardado.')
+  }
+  async function setSupplierActiveFromResources(id, active) {
+    if (!supabase || !id) return
+    const result = await supabase.from(TABLES.suppliers).update({ active: !!active }).eq('id', id)
+    if (result.error) {
+      alert('Error actualizando proveedor: ' + result.error.message)
+      return
+    }
+    await loadResources()
+    showToast(active ? 'Proveedor activado.' : 'Proveedor desactivado.')
+  }
+  async function deleteSupplierFromResources(id) {
+    if (!supabase || !id || !confirm('Eliminar este proveedor?')) return
+    const result = await supabase.from(TABLES.suppliers).delete().eq('id', id)
+    if (result.error) {
+      alert('Error eliminando proveedor: ' + result.error.message)
+      return
+    }
+    await loadResources()
+    showToast('Proveedor eliminado.')
+  }
+  async function saveCategoryFromResources(payload) {
+    if (!supabase || !resourceMasterReady) return
+    const name = String(payload?.name || '').trim()
+    if (!name) {
+      alert('Escribe el nombre de la categoria.')
+      return
+    }
+    const kind = normalizeResourceKind(payload?.kind)
+    const siblingParentId = payload?.parent_id || null
+    let nextSortOrder = Number(payload?.sort_order || 0)
+    if (!payload?.id && nextSortOrder <= 0) {
+      const siblings = resourceCategories.filter((row) => (row.parent_id || null) === siblingParentId)
+      const maxSort = siblings.reduce((max, row) => Math.max(max, Number(row.sort_order || 0)), 0)
+      nextSortOrder = maxSort + 10
+    }
+    const rowPayload = {
+      name,
+      kind,
+      parent_id: siblingParentId,
+      active: payload?.active !== false,
+      sort_order: nextSortOrder,
+    }
+    const result = payload?.id
+      ? await supabase.from(TABLES.resourceCategories).update(rowPayload).eq('id', payload.id)
+      : await supabase.from(TABLES.resourceCategories).insert([rowPayload])
+    if (result.error) {
+      alert('Error guardando categoria: ' + result.error.message)
+      return
+    }
+    await loadResources()
+    showToast(payload?.id ? 'Categoria actualizada.' : 'Categoria creada.')
+  }
+  async function moveCategoryFromResources(id, direction) {
+    if (!supabase || !resourceMasterReady || !id) return
+    const bySortThenName = (a, b) => {
+      const bySort = Number(a.sort_order || 0) - Number(b.sort_order || 0)
+      if (bySort !== 0) return bySort
+      return String(a.name || '').localeCompare(String(b.name || ''), 'es')
+    }
+    const current = resourceCategories.find((row) => row.id === id)
+    if (!current) return
+    const parentId = current.parent_id || null
+    const siblings = resourceCategories.filter((row) => (row.parent_id || null) === parentId).sort(bySortThenName)
+    const index = siblings.findIndex((row) => row.id === id)
+    if (index < 0) return
+    const targetIndex = direction === 'up' ? index - 1 : index + 1
+    if (targetIndex < 0 || targetIndex >= siblings.length) return
+    const source = siblings[index]
+    const target = siblings[targetIndex]
+    const sourceSort = Number(source.sort_order || 0)
+    const targetSort = Number(target.sort_order || 0)
+
+    // Optimistic swap in UI to avoid waiting for full reload.
+    setResourceCategories((prev) => prev.map((row) => {
+      if (row.id === source.id) return { ...row, sort_order: targetSort }
+      if (row.id === target.id) return { ...row, sort_order: sourceSort }
+      return row
+    }))
+
+    const [r1, r2] = await Promise.all([
+      supabase.from(TABLES.resourceCategories).update({ sort_order: targetSort }).eq('id', source.id),
+      supabase.from(TABLES.resourceCategories).update({ sort_order: sourceSort }).eq('id', target.id),
+    ])
+    if (r1.error || r2.error) {
+      await loadResources()
+      alert('Error ordenando categoria: ' + (r1.error?.message || r2.error?.message || 'Error desconocido'))
+      return
+    }
+    showToast('Orden actualizado.')
+  }
+  async function setCategoryActiveFromResources(id, active) {
+    if (!supabase || !id) return
+    const result = await supabase.from(TABLES.resourceCategories).update({ active: !!active }).eq('id', id)
+    if (result.error) {
+      alert('Error actualizando categoria: ' + result.error.message)
+      return
+    }
+    await loadResources()
+    showToast(active ? 'Categoria activada.' : 'Categoria desactivada.')
+  }
+  async function deleteCategoryFromResources(id) {
+    if (!supabase || !id || !confirm('Eliminar esta categoria/subcategoria?')) return
+    const result = await supabase.from(TABLES.resourceCategories).delete().eq('id', id)
+    if (result.error) {
+      alert('Error eliminando categoria: ' + result.error.message)
+      return
+    }
+    await loadResources()
+    showToast('Categoria eliminada.')
+  }
+  async function mergeCategoryFromResources(sourceId, targetId) {
+    if (!supabase || !sourceId || !targetId || sourceId === targetId) return
+    const relinkTemplates = await supabase
+      .from(TABLES.resourceTemplates)
+      .update({ category_id: targetId })
+      .eq('category_id', sourceId)
+    if (relinkTemplates.error) {
+      alert('Error unificando categoria (templates): ' + relinkTemplates.error.message)
+      return
+    }
+    const relinkChildren = await supabase
+      .from(TABLES.resourceCategories)
+      .update({ parent_id: targetId })
+      .eq('parent_id', sourceId)
+    if (relinkChildren.error) {
+      alert('Error unificando categoria (hijas): ' + relinkChildren.error.message)
+      return
+    }
+    const removeSource = await supabase
+      .from(TABLES.resourceCategories)
+      .delete()
+      .eq('id', sourceId)
+    if (removeSource.error) {
+      alert('Error eliminando categoria duplicada: ' + removeSource.error.message)
+      return
+    }
+    await loadResources()
+    showToast('Categoria unificada.')
+  }
+  async function updateSupplierPrice(resourceRow, patch) {
+    if (!supabase || !resourceMasterReady || !resourceRow?.supplierPriceId) return
+    const next = { ...patch }
+    if (Object.prototype.hasOwnProperty.call(next, 'cost')) next.cost = Number(next.cost || 0)
+    if (next.cost < 0) {
+      alert('No se permiten precios negativos.')
+      return
+    }
+    const { error } = await supabase
+      .from(TABLES.supplierPrices)
+      .update(next)
+      .eq('id', resourceRow.supplierPriceId)
+    if (error) {
+      alert('Error actualizando precio: ' + error.message)
+      return
+    }
+    await loadResources()
+    showToast('Precio actualizado. Historial registrado si cambio el costo o impuesto.')
+  }
+  async function updateMasterResourceRow(resourceRow, patch) {
+    if (!supabase || !resourceMasterReady || !resourceRow?.resourceTemplateId || !resourceRow?.resourceVariantId) return false
+    try {
+      const kind = normalizeResourceKind(patch.tipo || resourceRow.tipo)
+      const hasSubcategory = String(patch.subcategoria || '').trim().length > 0
+      const parentName = String(patch.parentCategory || '').trim() || (kind === 'Material' ? 'Materiales' : 'Servicios')
+      const categoryName = String((hasSubcategory ? patch.subcategoria : patch.categoria) || resourceRow.subcategoria || resourceRow.categoria || '').trim()
+      if (!categoryName) {
+        alert('La categoria/subcategoria no puede estar vacia.')
+        return
+      }
+
+      let category = null
+      if (hasSubcategory) {
+        const parent = await findOrCreateCategory(parentName, kind)
+        category = await findOrCreateCategory(categoryName, kind, parent?.id || null)
+      } else {
+        category = await findOrCreateCategory(categoryName, kind, null)
+      }
+      if (!category?.id) throw new Error('No se pudo resolver categoria.')
+
+      const supplierName = String(patch.proveedor || '').trim() || resourceRow.proveedor
+      const supplier = await findOrCreateSupplier(supplierName)
+      if (!supplier?.id) throw new Error('No se pudo resolver proveedor.')
+
+      const templatePayload = {
+        category_id: category.id,
+        kind,
+        name: String(patch.nombre || resourceRow.nombre || '').trim() || resourceRow.nombre,
+        description: String(patch.notes || resourceRow.notes || '').trim(),
+        base_unit: String(patch.unidad || resourceRow.unidad || 'unidad').trim() || 'unidad',
+      }
+      const variantPayload = {
+        name: String(patch.variante || resourceRow.variante || 'General').trim() || 'General',
+        unit: String(patch.unidad || resourceRow.unidad || 'unidad').trim() || 'unidad',
+        attributes_json: {
+          ...(resourceRow.attributes || {}),
+          Tamano: String(patch.medida || '').trim(),
+          Espesor: String(patch.espesor || '').trim(),
+        },
+      }
+      const pricePayload = {
+        supplier_id: supplier.id,
+        cost: Number(patch.costo ?? resourceRow.costo ?? 0),
+        includes_tax: !!patch.includesTax,
+        effective_from: patch.effectiveFrom || resourceRow.effectiveFrom || new Date().toISOString().slice(0, 10),
+        last_checked_at: patch.fechaActualizacion || resourceRow.fechaActualizacion || new Date().toISOString().slice(0, 10),
+        notes: String(patch.notes || '').trim(),
+      }
+
+      if (pricePayload.cost < 0) {
+        alert('No se permiten precios negativos.')
+        return
+      }
+
+      const t = await supabase.from(TABLES.resourceTemplates).update(templatePayload).eq('id', resourceRow.resourceTemplateId)
+      if (t.error) throw t.error
+      const v = await supabase.from(TABLES.resourceVariants).update(variantPayload).eq('id', resourceRow.resourceVariantId)
+      if (v.error) throw v.error
+      if (resourceRow.supplierPriceId) {
+        const p = await supabase.from(TABLES.supplierPrices).update(pricePayload).eq('id', resourceRow.supplierPriceId)
+        if (p.error) throw p.error
+      } else {
+        const p = await supabase.from(TABLES.supplierPrices).insert([{
+          resource_variant_id: resourceRow.resourceVariantId,
+          ...pricePayload,
+          currency: 'BOB',
+          active: true,
+        }])
+        if (p.error) throw p.error
+      }
+
+      await loadResources()
+      showToast('Recurso maestro actualizado.')
+      return true
+    } catch (err) {
+      alert('Error actualizando recurso maestro: ' + (err?.message || 'Error desconocido'))
+      return false
+    }
+  }
+  async function updateResourceTemplateFromResources(resourceRow, patch) {
+    if (!supabase || !resourceMasterReady || !resourceRow?.resourceTemplateId) return false
+    try {
+      const kind = normalizeResourceKind(patch.tipo || resourceRow.tipo)
+      const hasSubcategory = String(patch.subcategoria || '').trim().length > 0
+      const parentName = String(patch.parentCategory || '').trim() || (kind === 'Material' ? 'Materiales' : 'Servicios')
+      const categoryName = String((hasSubcategory ? patch.subcategoria : patch.categoria) || resourceRow.subcategoria || resourceRow.categoria || parentName).trim()
+      const parent = hasSubcategory ? await findOrCreateCategory(parentName, kind) : null
+      const category = await findOrCreateCategory(categoryName, kind, parent?.id || null)
+      if (!category?.id) throw new Error('No se pudo resolver categoria.')
+
+      const result = await supabase
+        .from(TABLES.resourceTemplates)
+        .update({
+          category_id: category.id,
+          kind,
+          name: String(patch.nombre || resourceRow.nombre || '').trim(),
+          description: String(patch.notes || '').trim(),
+          base_unit: String(patch.unidad || resourceRow.unidad || 'unidad').trim() || 'unidad',
+          active: patch.active !== false,
+        })
+        .eq('id', resourceRow.resourceTemplateId)
+      if (result.error) throw result.error
+
+      await loadResources()
+      showToast('Material/servicio actualizado.')
+      return true
+    } catch (err) {
+      alert('Error actualizando material/servicio: ' + (err?.message || 'Error desconocido'))
+      return false
+    }
+  }
+  async function saveVariationFromResources(resourceRow, draft) {
+    if (!supabase || !resourceMasterReady || !resourceRow?.resourceTemplateId) return false
+    try {
+      const unit = String(draft.unidad || resourceRow.unidad || 'unidad').trim() || 'unidad'
+      const attrs = {}
+      if (String(draft.medida || '').trim()) attrs.Tamano = String(draft.medida).trim()
+      if (String(draft.espesor || '').trim()) attrs.Espesor = String(draft.espesor).trim()
+      const variantName = String(draft.variante || '').trim() || [resourceRow.nombre, draft.medida, draft.espesor].filter(Boolean).join(' ') || `${resourceRow.nombre} General`
+      const variantInsert = await supabase
+        .from(TABLES.resourceVariants)
+        .insert([{
+          resource_template_id: resourceRow.resourceTemplateId,
+          name: variantName,
+          sku: String(draft.sku || '').trim() || null,
+          unit,
+          attributes_json: attrs,
+          active: true,
+        }])
+        .select()
+        .single()
+      if (variantInsert.error) throw variantInsert.error
+
+      const supplier = await findOrCreateSupplier(draft.proveedor || resourceRow.proveedor)
+      if (!supplier?.id) throw new Error('No se pudo resolver proveedor.')
+      const priceInsert = await supabase.from(TABLES.supplierPrices).insert([{
+        resource_variant_id: variantInsert.data.id,
+        supplier_id: supplier.id,
+        cost: Number(draft.costo || 0),
+        currency: 'BOB',
+        includes_tax: !!draft.includesTax,
+        effective_from: draft.effectiveFrom || new Date().toISOString().slice(0, 10),
+        last_checked_at: draft.fechaActualizacion || new Date().toISOString().slice(0, 10),
+        notes: String(draft.notes || '').trim(),
+        active: true,
+      }])
+      if (priceInsert.error) throw priceInsert.error
+
+      await loadResources()
+      showToast('Variacion agregada.')
+      return true
+    } catch (err) {
+      alert('Error guardando variacion: ' + (err?.message || 'Error desconocido'))
+      return false
+    }
+  }
+  async function deleteResourceTemplateFromResources(resourceRow) {
+    if (!supabase || !resourceMasterReady || !resourceRow?.resourceTemplateId) return false
+    if (!confirm(`Eliminar "${resourceRow.nombre}" con todas sus variaciones?`)) return false
+    const result = await supabase
+      .from(TABLES.resourceTemplates)
+      .delete()
+      .eq('id', resourceRow.resourceTemplateId)
+    if (result.error) {
+      alert('Error eliminando material/servicio: ' + result.error.message)
+      return false
+    }
+    await loadResources()
+    showToast('Material/servicio eliminado.')
+    return true
+  }
+  async function deactivateResourceRow(resourceRow) {
+    if (!supabase || !resourceRow) return
+    if (resourceRow.source === 'legacy') {
+      await supabase.from(TABLES.resources).update({ is_active: false }).eq('id', resourceRow.id)
+    } else if (resourceRow.supplierPriceId) {
+      await supabase.from(TABLES.supplierPrices).update({ active: false }).eq('id', resourceRow.supplierPriceId)
+    } else {
+      await supabase.from(TABLES.resourceVariants).update({ active: false }).eq('id', resourceRow.resourceVariantId)
+    }
+    await loadResources()
+    showToast('Recurso desactivado.')
+  }
   async function saveClient(e) {
     e.preventDefault()
     if (!supabase) return
@@ -766,6 +1376,22 @@ export default function Page() {
     }
     await loadResources()
   }
+  async function deleteResourceRow(resourceRow) {
+    if (!supabase || !resourceRow || !confirm('Eliminar este registro de recursos?')) return
+    if (resourceRow.source === 'legacy') {
+      await deleteResource(resourceRow.id)
+      return
+    }
+    const targetTable = resourceRow.supplierPriceId ? TABLES.supplierPrices : TABLES.resourceVariants
+    const targetId = resourceRow.supplierPriceId || resourceRow.resourceVariantId
+    const { error } = await supabase.from(targetTable).delete().eq('id', targetId)
+    if (error) {
+      alert('Error eliminando recurso: ' + error.message)
+      return
+    }
+    await loadResources()
+    showToast('Registro eliminado.')
+  }
   async function updateResourcesMetadata(matcher, updater) {
     if (!supabase) return false
     const { data, error } = await supabase.from(TABLES.resources).select('id, notes')
@@ -832,7 +1458,7 @@ export default function Page() {
     if (ok) await loadResources()
   }
   function editResource(resource) {
-    setActiveTab('recursos')
+    openQuoteStep('biblioteca')
     setEditingResourceId(resource.id)
     setResourceForm({
       tipo: resource.tipo || 'Material',
@@ -849,15 +1475,21 @@ export default function Page() {
     })
   }
   function addResourceToDetail(resource) {
-    setActiveTab('subitems')
+    const snapshot = makeResourceSnapshot(resource)
+    openQuoteStep('subitems')
     setDetailForm((prev) => ({
       ...prev,
       tipo: resource.tipo || 'Material',
-      descripcion: resource.nombre || '',
+      descripcion: resource.variante || resource.nombre || '',
       proveedor: resource.proveedor || '',
       unidad: resource.unidad || 'unidad',
       costoUnitario: Number(resource.costo || 0),
       especificacion: resource.especificacion || '',
+      resourceTemplateId: snapshot.resource_template_id || '',
+      resourceVariantId: snapshot.resource_variant_id || '',
+      supplierPriceId: snapshot.supplier_price_id || '',
+      includesTax: snapshot.includes_tax,
+      copiedCostAt: snapshot.copiedAt,
     }))
   }
   function saveItemLocal(e) {
@@ -904,7 +1536,7 @@ export default function Page() {
     setItemForm(initialItem)
   }
   function editItem(item) {
-    setActiveTab('items')
+    openQuoteStep('items')
     setEditingItemId(item.id)
     setItemForm({
       codigo: item.codigo,
@@ -952,6 +1584,11 @@ export default function Page() {
       costoUnitario: Number(detailForm.costoUnitario || 0),
       tasaUtilidad: Number(detailForm.tasaUtilidad || 0),
       especificacion: detailForm.especificacion.trim(),
+      resourceTemplateId: detailForm.resourceTemplateId || '',
+      resourceVariantId: detailForm.resourceVariantId || '',
+      supplierPriceId: detailForm.supplierPriceId || '',
+      includesTax: !!detailForm.includesTax,
+      copiedCostAt: detailForm.copiedCostAt || '',
     }
     if (editingDetailId) {
       setDetails((prev) => prev.map((d) => (d.id === editingDetailId ? { ...d, ...payload } : d)))
@@ -962,7 +1599,7 @@ export default function Page() {
     setDetailForm({ ...initialDetail, itemId: detailForm.itemId })
   }
   function editDetail(detail) {
-    setActiveTab('subitems')
+    openQuoteStep('subitems')
     setEditingDetailId(detail.id)
     setDetailForm({
       itemId: detail.itemId,
@@ -974,6 +1611,11 @@ export default function Page() {
       costoUnitario: detail.costoUnitario,
       tasaUtilidad: detail.tasaUtilidad,
       especificacion: detail.especificacion,
+      resourceTemplateId: detail.resourceTemplateId || '',
+      resourceVariantId: detail.resourceVariantId || '',
+      supplierPriceId: detail.supplierPriceId || '',
+      includesTax: !!detail.includesTax,
+      copiedCostAt: detail.copiedCostAt || '',
     })
   }
   function deleteDetail(id) {
@@ -1086,6 +1728,7 @@ export default function Page() {
         const row = related[j]
         const insertedDetail = await supabase.from(TABLES.details).insert([{
           project_item_id: dbItemId,
+          resource_id: row.legacyResourceId || null,
           type: row.tipo,
           description: row.descripcion,
           supplier_name: row.proveedor,
@@ -1094,6 +1737,17 @@ export default function Page() {
           unit_cost: row.costoUnitario,
           margin_rate: row.tasaUtilidad,
           specification: row.especificacion,
+          notes: JSON.stringify({
+            resource_template_id: row.resourceTemplateId || null,
+            resource_variant_id: row.resourceVariantId || null,
+            supplier_price_id: row.supplierPriceId || null,
+            resource_name: row.descripcion || '',
+            supplier_name: row.proveedor || '',
+            unit: row.unidad || '',
+            unit_cost: Number(row.costoUnitario || 0),
+            includes_tax: !!row.includesTax,
+            copied_cost_at: row.copiedCostAt || new Date().toISOString(),
+          }),
           position: j + 1,
         }])
         if (insertedDetail.error) {
@@ -1105,7 +1759,7 @@ export default function Page() {
     }
     setSavingProject(false)
     await loadHistory()
-    setSavedQuoteSnapshot(buildQuoteSnapshot(project, items, details, projectId))
+    setSavedQuoteSnapshot(buildQuoteSnapshot(project, items, details))
     showToast(successMessage || (editingProjectId ? 'Cotización actualizada.' : 'Cotización guardada.'))
   }
   async function saveProjectDraft() {
@@ -1158,18 +1812,26 @@ export default function Page() {
       tasaImpuesto: Number(i.tax_rate || 0),
       descuentoEspecial: Number(i.discount_pct || 0),
     })))
-    setDetails((detailsRes.data || []).map((d) => ({
-      id: d.id,
-      itemId: d.project_item_id,
-      tipo: d.type || 'Material',
-      descripcion: d.description || '',
-      proveedor: d.supplier_name || '',
-      unidad: d.unit || 'unidad',
-      cantidad: Number(d.quantity || 0),
-      costoUnitario: Number(d.unit_cost || 0),
-      tasaUtilidad: Number(d.margin_rate || 0),
-      especificacion: d.specification || '',
-    })))
+    setDetails((detailsRes.data || []).map((d) => {
+      const refs = parseJsonObject(d.notes, {})
+      return {
+        id: d.id,
+        itemId: d.project_item_id,
+        tipo: d.type || 'Material',
+        descripcion: d.description || '',
+        proveedor: d.supplier_name || '',
+        unidad: d.unit || 'unidad',
+        cantidad: Number(d.quantity || 0),
+        costoUnitario: Number(d.unit_cost || 0),
+        tasaUtilidad: Number(d.margin_rate || 0),
+        especificacion: d.specification || '',
+        resourceTemplateId: refs.resource_template_id || '',
+        resourceVariantId: refs.resource_variant_id || '',
+        supplierPriceId: refs.supplier_price_id || '',
+        includesTax: !!refs.includes_tax,
+        copiedCostAt: refs.copied_cost_at || '',
+      }
+    }))
     setSavedQuoteSnapshot(buildQuoteSnapshot({
       numero: row.numero || '',
       nombreProyecto: row.nombreProyecto || '',
@@ -1199,8 +1861,8 @@ export default function Page() {
       costoUnitario: Number(d.unit_cost || 0),
       tasaUtilidad: Number(d.margin_rate || 0),
       especificacion: d.specification || '',
-    })), row.id))
-    setActiveTab('cotizacion')
+    })))
+    openQuoteStep('pdf')
   }
   async function duplicateProjectFromHistory(row) {
     await openProjectFromHistory(row)
@@ -1402,9 +2064,40 @@ export default function Page() {
       if (backupInputRef.current) backupInputRef.current.value = ''
     }
   }
+  const quoteStepLabels = {
+    proyecto: 'Proyecto',
+    items: 'Productos',
+    subitems: 'Detalles',
+    biblioteca: 'Biblioteca',
+    resumen: 'Resumen',
+    pdf: 'PDF / Imprimir',
+  }
+  function openQuoteStep(step) {
+    setActiveTab('cotizacion')
+    setQuoteStep(step)
+  }
+  async function saveQuoteAndLeave() {
+    const nextTab = pendingExternalTab
+    await saveProjectDraft()
+    setPendingExternalTab(null)
+    if (nextTab) setActiveTab(nextTab)
+  }
+  function leaveQuoteWithoutSaving() {
+    const nextTab = pendingExternalTab
+    setPendingExternalTab(null)
+    if (nextTab) setActiveTab(nextTab)
+  }
   const showDashboardHeader = activeTab !== 'cotizacion'
   function handleTabChange(nextTab) {
     if (nextTab === activeTab) return
+    if (nextTab === 'recursos') {
+      openQuoteStep('biblioteca')
+      return
+    }
+    if (activeTab === 'cotizacion' && nextTab !== 'cotizacion' && hasUnsavedQuoteChanges) {
+      setPendingExternalTab(nextTab)
+      return
+    }
     setActiveTab(nextTab)
   }
   return (
@@ -1428,6 +2121,63 @@ export default function Page() {
         <span>{getSyncText()}</span>
         <span className="sync-project">{getEditingProjectText()}</span>
       </div>
+      {activeTab === 'cotizacion' && (
+        <section className="quote-workspace-shell">
+          <div className="quote-workspace-head">
+            <div>
+              <span className="eyebrow">Cotizacion activa</span>
+              <h1>Construir cotizacion</h1>
+              <p>
+                Trabaja el proyecto, productos, detalles, resumen y PDF en un solo flujo.
+              </p>
+            </div>
+            <div className="quote-workspace-actions">
+              <button type="button" className="btn success" onClick={resetCotizacionActual}>
+                <PlusCircle size={16} aria-hidden="true" />
+                Nueva cotizacion
+              </button>
+              <button type="button" className="btn" onClick={saveProjectDraft} disabled={savingProject}>
+                <Save size={16} aria-hidden="true" />
+                {savingProject ? 'Guardando...' : 'Guardar cotizacion'}
+              </button>
+            </div>
+          </div>
+          <div className="quote-step-tabs" role="tablist" aria-label="Flujo de cotizacion">
+            {QUOTE_EDIT_TABS.map((step) => (
+              <button
+                key={step}
+                type="button"
+                className={`${quoteStep === step ? 'active' : ''} ${step === 'items' || step === 'subitems' ? 'highlight-step' : ''}`}
+                onClick={() => setQuoteStep(step)}
+              >
+                {step === 'items' ? <Package2 size={15} aria-hidden="true" /> : null}
+                {step === 'subitems' ? <ListChecks size={15} aria-hidden="true" /> : null}
+                <span>{quoteStepLabels[step]}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {pendingExternalTab && (
+        <div className="wizard-modal-backdrop">
+          <div className="unsaved-modal card">
+            <span className="eyebrow">Cambios sin guardar</span>
+            <h3>Tienes cambios sin guardar en esta cotizacion.</h3>
+            <p>Quieres guardar antes de salir?</p>
+            <div className="compact-actions" style={{ justifyContent: 'flex-end' }}>
+              <button type="button" className="btn secondary" onClick={leaveQuoteWithoutSaving}>
+                Salir sin guardar
+              </button>
+              <button type="button" className="btn secondary" onClick={() => setPendingExternalTab(null)}>
+                Cancelar
+              </button>
+              <button type="button" className="btn" onClick={saveQuoteAndLeave} disabled={savingProject}>
+                {savingProject ? 'Guardando...' : 'Guardar y salir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {activeTab === 'inicio' && (
         <HomeSection
           resources={resources}
@@ -1439,7 +2189,7 @@ export default function Page() {
           money={(value) => money(value, project.moneda)}
         />
       )}
-      {activeTab === 'proyecto' && (
+      {activeTab === 'cotizacion' && quoteStep === 'proyecto' && (
         <ProjectSection
           project={project}
           setProject={setProject}
@@ -1448,6 +2198,7 @@ export default function Page() {
           resetCotizacionActual={resetCotizacionActual}
           onSaveDraft={saveProjectDraft}
           savingProject={savingProject}
+          hideSaveAction
         />
       )}
       {activeTab === 'clientes' && (
@@ -1514,8 +2265,8 @@ export default function Page() {
           </section>
           <section className="card">
             <h2>Clientes guardados</h2>
-            <div className="table-wrap">
-              <table>
+            <div className="table-wrap tabla-container clients-desktop-table">
+              <table className="clients-table">
                 <thead>
                   <tr>
                     <th>Cliente</th>
@@ -1542,7 +2293,7 @@ export default function Page() {
                               className="mini-btn"
                               onClick={() => {
                                 applyClientInProject(row)
-                                setActiveTab('proyecto')
+                                openQuoteStep('proyecto')
                               }}
                             >
                               Usar
@@ -1565,10 +2316,45 @@ export default function Page() {
                 </tbody>
               </table>
             </div>
+            <div className="clients-mobile-list">
+              {clients.length ? (
+                clients.map((row) => (
+                  <article key={`client-mobile-${row.id}`} className="mobile-data-card">
+                    <h3>{row.cliente || '-'}</h3>
+                    <div className="mobile-data-grid">
+                      <span><strong>Responsable:</strong> {row.responsable || '-'}</span>
+                      <span><strong>Telefono:</strong> {row.telefono || '-'}</span>
+                      <span><strong>NIT:</strong> {row.nit || '-'}</span>
+                      <span><strong>Razon social:</strong> {row.razonSocial || '-'}</span>
+                    </div>
+                    <div className="mobile-data-actions">
+                      <button
+                        type="button"
+                        className="mini-btn"
+                        onClick={() => {
+                          applyClientInProject(row)
+                          openQuoteStep('proyecto')
+                        }}
+                      >
+                        Usar
+                      </button>
+                      <button type="button" className="mini-btn success" onClick={() => editClient(row)}>
+                        Editar
+                      </button>
+                      <button type="button" className="mini-btn danger" onClick={() => deleteClient(row.id)}>
+                        Eliminar
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="muted">Aun no hay clientes guardados.</div>
+              )}
+            </div>
           </section>
         </div>
       )}
-      {activeTab === 'items' && (
+      {activeTab === 'cotizacion' && quoteStep === 'items' && (
         <div className="grid" style={{ gap: 16 }}>
           <section className="card compact-card">
             <h2>{editingItemId ? 'Editar producto' : 'Crear producto'}</h2>
@@ -1632,8 +2418,8 @@ export default function Page() {
           </section>
           <section className="card compact-card">
             <h2>Productos actuales</h2>
-            <div className="table-wrap">
-              <table className="compact-table">
+            <div className="table-wrap tabla-container products-desktop-table">
+              <table className="compact-table products-table">
                 <thead>
                   <tr>
                     <th>Producto</th>
@@ -1691,10 +2477,40 @@ export default function Page() {
                 </tbody>
               </table>
             </div>
+            <div className="products-mobile-list">
+              {itemRows.length ? (
+                itemRows.map((item) => (
+                  <article key={`product-mobile-${item.id}`} className="mobile-data-card">
+                    <h3>{item.codigo} - {item.nombre}</h3>
+                    <div className="mobile-data-grid">
+                      <span><strong>Categoria:</strong> {item.categoria || '-'}</span>
+                      <span><strong>Cantidad:</strong> {Number(item.cantidad || 1).toLocaleString('es-BO')}</span>
+                      <span><strong>Descuento:</strong> {item.descuentoPct ? `${item.descuentoPct}%` : '-'}</span>
+                      <span><strong>Impuesto:</strong> {item.aplicaImpuesto ? `${Number(item.tasaImpuesto || 0).toLocaleString('es-BO')}%` : 'No incluye'}</span>
+                      <span><strong>Total s/f:</strong> {money(item.totalSinFactura, project.moneda)}</span>
+                      <span><strong>Total final:</strong> {money(item.total, project.moneda)}</span>
+                    </div>
+                    <div className="mobile-data-actions">
+                      <button type="button" className="mini-btn success" onClick={() => editItem(item)}>
+                        Editar
+                      </button>
+                      <button type="button" className="mini-btn" onClick={() => duplicateItem(item)}>
+                        Duplicar
+                      </button>
+                      <button type="button" className="mini-btn danger" onClick={() => deleteItem(item.id)}>
+                        Eliminar
+                      </button>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="muted">Aun no agregaste productos.</div>
+              )}
+            </div>
           </section>
         </div>
       )}
-      {activeTab === 'subitems' && (
+      {activeTab === 'cotizacion' && quoteStep === 'subitems' && (
         <div className="grid" style={{ gap: 16 }}>
           <section className="card compact-card">
             <h2>{editingDetailId ? 'Editar detalle' : 'Crear detalle'}</h2>
@@ -1770,9 +2586,9 @@ export default function Page() {
             </form>
           </section>
           <section className="card compact-card">
-            <h2>SubProductos actuales</h2>
-            <div className="table-wrap">
-              <table className="compact-table">
+            <h2>Detalles actuales</h2>
+            <div className="table-wrap tabla-container details-desktop-table">
+              <table className="compact-table details-table">
                 <thead>
                   <tr>
                     <th>Producto</th>
@@ -1923,10 +2739,48 @@ export default function Page() {
                 ) : null}
               </table>
             </div>
+            <div className="details-mobile-list">
+              {details.length ? (
+                details.map((row) => {
+                  const item = items.find((it) => it.id === row.itemId)
+                  const cantidad = Number(row.cantidad || 0)
+                  const precioUnitario = Number(row.costoUnitario || 0)
+                  const utilidadPct = Number(row.tasaUtilidad || 0)
+                  const subtotal = cantidad * precioUnitario
+                  const ganancia = subtotal * (utilidadPct / 100)
+                  const total = subtotal + ganancia
+                  return (
+                    <article key={`detail-mobile-${row.id}`} className="mobile-data-card">
+                      <h3>{item?.codigo || '-'} - {item?.nombre || 'Producto sin nombre'}</h3>
+                      <div className="mobile-data-grid">
+                        <span><strong>Descripcion:</strong> {row.descripcion || '-'}</span>
+                        <span><strong>Tipo:</strong> {row.tipo || '-'}</span>
+                        <span><strong>Proveedor:</strong> {row.proveedor || '-'}</span>
+                        <span><strong>Cantidad:</strong> {cantidad} {row.unidad || 'unidad'}</span>
+                        <span><strong>Precio unitario:</strong> {money(precioUnitario, project.moneda)}</span>
+                        <span><strong>Subtotal:</strong> {money(subtotal, project.moneda)}</span>
+                        <span><strong>Utilidad:</strong> {utilidadPct}%</span>
+                        <span><strong>Total:</strong> {money(total, project.moneda)}</span>
+                      </div>
+                      <div className="mobile-data-actions">
+                        <button type="button" className="mini-btn success" onClick={() => editDetail(row)}>
+                          Editar
+                        </button>
+                        <button type="button" className="mini-btn danger" onClick={() => deleteDetail(row.id)}>
+                          Eliminar
+                        </button>
+                      </div>
+                    </article>
+                  )
+                })
+              ) : (
+                <div className="muted">Aun no agregaste detalles.</div>
+              )}
+            </div>
           </section>
         </div>
       )}
-      {activeTab === 'recursos' && (
+      {activeTab === 'cotizacion' && quoteStep === 'biblioteca' && (
         <ResourcesSection
           editingResourceId={editingResourceId}
           resourceForm={resourceForm}
@@ -1935,17 +2789,135 @@ export default function Page() {
           savingResource={savingResource}
           setEditingResourceId={setEditingResourceId}
           resources={resources}
+          resourceCategories={resourceCategories}
+          suppliers={suppliers}
+          priceHistory={priceHistory}
+          resourceMasterReady={resourceMasterReady}
           money={money}
           addResourceToDetail={addResourceToDetail}
           editResource={editResource}
-          deleteResource={deleteResource}
+          deleteResource={deleteResourceRow}
+          saveAdvancedResource={saveAdvancedResource}
+          saveSupplierFromResources={saveSupplierFromResources}
+          setSupplierActiveFromResources={setSupplierActiveFromResources}
+          deleteSupplierFromResources={deleteSupplierFromResources}
+          saveCategoryFromResources={saveCategoryFromResources}
+          moveCategoryFromResources={moveCategoryFromResources}
+          setCategoryActiveFromResources={setCategoryActiveFromResources}
+          deleteCategoryFromResources={deleteCategoryFromResources}
+          mergeCategoryFromResources={mergeCategoryFromResources}
+          updateSupplierPrice={updateSupplierPrice}
+          updateMasterResourceRow={updateMasterResourceRow}
+          updateResourceTemplateFromResources={updateResourceTemplateFromResources}
+          saveVariationFromResources={saveVariationFromResources}
+          deleteResourceTemplateFromResources={deleteResourceTemplateFromResources}
           renameCategoryEverywhere={renameCategoryEverywhere}
           deleteCategoryEverywhere={deleteCategoryEverywhere}
           renameSubcategoryEverywhere={renameSubcategoryEverywhere}
           deleteSubcategoryEverywhere={deleteSubcategoryEverywhere}
         />
       )}
-      {activeTab === 'cotizacion' && (
+      {activeTab === 'cotizacion' && quoteStep === 'resumen' && (
+        <section className="card quote-summary-card">
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Revision final</span>
+              <h2>Resumen de cotizacion</h2>
+              <p className="muted">Revisa totales, descuentos e impuestos antes de generar el PDF.</p>
+            </div>
+            <button type="button" className="btn secondary" onClick={() => setQuoteStep('pdf')}>
+              Ver PDF / Imprimir
+            </button>
+          </div>
+          <div className="quote-summary-grid">
+            <div className="summary-metric">
+              <span>Productos</span>
+              <strong>{itemRows.length}</strong>
+            </div>
+            <div className="summary-metric">
+              <span>Detalles</span>
+              <strong>{details.length}</strong>
+            </div>
+            <div className="summary-metric">
+              <span>Subtotal</span>
+              <strong>{money(subtotalProyecto, project.moneda)}</strong>
+            </div>
+            <div className="summary-metric total">
+              <span>Total final</span>
+              <strong>{money(totalProyecto, project.moneda)}</strong>
+            </div>
+          </div>
+          <div className="table-wrap tabla-container summary-table-wrap">
+            <table className="compact-table">
+              <thead>
+                <tr>
+                  <th>Producto</th>
+                  <th>Cantidad</th>
+                  <th>Subtotal</th>
+                  <th>Descuento</th>
+                  <th>Impuesto</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {itemRows.length ? itemRows.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <strong>{item.codigo} - {item.nombre}</strong>
+                      <div className="tiny-muted">{item.categoria || '-'}</div>
+                    </td>
+                    <td>{Number(item.cantidad || 1).toLocaleString('es-BO')}</td>
+                    <td>{money(item.totalSinFactura, project.moneda)}</td>
+                    <td>{item.descuentoPct ? `${item.descuentoPct}%` : '-'}</td>
+                    <td>{item.aplicaImpuesto ? money(item.impuesto, project.moneda) : '-'}</td>
+                    <td><strong>{money(item.total, project.moneda)}</strong></td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6} className="muted">Aun no hay productos para resumir.</td>
+                  </tr>
+                )}
+              </tbody>
+              {itemRows.length ? (
+                <tfoot>
+                  <tr>
+                    <td colSpan={4} />
+                    <td><strong>Subtotal</strong></td>
+                    <td>{money(subtotalProyecto, project.moneda)}</td>
+                  </tr>
+                  {descuentoGeneralPct > 0 && (
+                    <tr>
+                      <td colSpan={4} />
+                      <td><strong>Descuento general</strong></td>
+                      <td>-{money(descuentoGeneralMonto, project.moneda)}</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td colSpan={4} />
+                    <td><strong>Total final</strong></td>
+                    <td><strong>{money(totalProyecto, project.moneda)}</strong></td>
+                  </tr>
+                </tfoot>
+              ) : null}
+            </table>
+          </div>
+          <div className="summary-mobile-list">
+            {itemRows.length ? itemRows.map((item) => (
+              <article key={`summary-mobile-${item.id}`} className="mobile-data-card">
+                <h3>{item.codigo} - {item.nombre}</h3>
+                <div className="mobile-data-grid">
+                  <span><strong>Cantidad:</strong> {Number(item.cantidad || 1).toLocaleString('es-BO')}</span>
+                  <span><strong>Subtotal:</strong> {money(item.totalSinFactura, project.moneda)}</span>
+                  <span><strong>Descuento:</strong> {item.descuentoPct ? `${item.descuentoPct}%` : '-'}</span>
+                  <span><strong>Impuesto:</strong> {item.aplicaImpuesto ? money(item.impuesto, project.moneda) : '-'}</span>
+                  <span><strong>Total:</strong> {money(item.total, project.moneda)}</span>
+                </div>
+              </article>
+            )) : <div className="muted">Aun no hay productos para resumir.</div>}
+          </div>
+        </section>
+      )}
+      {activeTab === 'cotizacion' && quoteStep === 'pdf' && (
         <QuoteSection
           project={project}
           itemRows={itemRows}
@@ -1960,6 +2932,7 @@ export default function Page() {
           money={money}
           formatDateDisplay={formatDateDisplay}
           safeText={safeText}
+          hideSaveAction
         />
       )}
       {activeTab === 'historial' && (
@@ -1997,11 +2970,28 @@ export default function Page() {
           max-width: 100%;
           overflow-x: hidden;
         }
+        body {
+          position: relative;
+        }
         .page {
           max-width: 1600px;
           margin: 0 auto;
           padding: 8px 10px 28px;
           width: 100%;
+          max-width: min(1600px, 100vw);
+          overflow-x: hidden;
+        }
+        .cotizador-theme,
+        .cotizador-theme > *,
+        .cotizador-theme section,
+        .cotizador-theme form,
+        .cotizador-theme .grid,
+        .quote-workspace-shell,
+        .card {
+          min-width: 0;
+          max-width: 100%;
+        }
+        .cotizador-theme {
           overflow-x: hidden;
         }
         .grid {
@@ -2091,8 +3081,10 @@ export default function Page() {
         }
         .tabs {
           display: grid;
-          grid-template-columns: repeat(9, minmax(0, 1fr));
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
           gap: 12px;
+          min-width: 0;
+          max-width: 100%;
         }
         .sync-indicator {
           justify-self: stretch;
@@ -2131,6 +3123,8 @@ export default function Page() {
           box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
           transition: .18s ease;
           cursor: pointer;
+          min-width: 0;
+          max-width: 100%;
         }
         .tab-btn-inner {
           display: inline-flex;
@@ -2138,6 +3132,10 @@ export default function Page() {
           justify-content: center;
           gap: 6px;
           width: 100%;
+          min-width: 0;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
         .tab-btn:hover {
           transform: translateY(-1px);
@@ -2178,6 +3176,7 @@ export default function Page() {
           border-radius: 26px;
           padding: 20px 22px;
           box-shadow: 0 10px 26px rgba(15, 23, 42, 0.035);
+          overflow: hidden;
         }
         .cotizador-theme h2 {
           margin: 0 0 18px;
@@ -2456,7 +3455,8 @@ export default function Page() {
         .tiny-muted {
           font-size: .88rem;
         }
-        .table-wrap {
+        .table-wrap,
+        .tabla-container {
           overflow-x: auto;
           max-width: 100%;
           -webkit-overflow-scrolling: touch;
@@ -2468,6 +3468,7 @@ export default function Page() {
           width: 100%;
           border-collapse: collapse;
           min-width: 720px;
+          white-space: nowrap;
           background: transparent;
         }
         .cotizador-theme th {
@@ -2485,6 +3486,57 @@ export default function Page() {
           border-bottom: 1px solid rgba(171, 231, 240, 0.24);
           color: #ffffff;
           vertical-align: top;
+        }
+        .clients-table th {
+          padding: 10px 10px;
+          font-size: .82rem;
+        }
+        .clients-table td {
+          padding: 8px 10px;
+          font-size: .9rem;
+          line-height: 1.15;
+        }
+        .clients-table .action-row {
+          gap: 6px;
+          flex-wrap: nowrap;
+        }
+        .clients-table .mini-btn {
+          padding: 6px 8px;
+          font-size: .78rem;
+          border-radius: 9px;
+        }
+        .clients-mobile-list {
+          display: none !important;
+          gap: 8px;
+        }
+        .summary-mobile-list {
+          display: none;
+          gap: 8px;
+        }
+        .clients-desktop-table {
+          display: block !important;
+        }
+        .clients-mobile-list .mobile-data-card {
+          padding: 10px 12px;
+          border-radius: 12px;
+        }
+        .clients-mobile-list .mobile-data-card h3 {
+          margin: 0 0 6px;
+          font-size: 1rem;
+        }
+        .clients-mobile-list .mobile-data-grid {
+          gap: 4px;
+          font-size: .86rem;
+          line-height: 1.25;
+        }
+        .clients-mobile-list .mobile-data-actions {
+          margin-top: 8px;
+          gap: 6px;
+        }
+        .clients-mobile-list .mobile-data-actions .mini-btn {
+          padding: 6px 8px;
+          font-size: .78rem;
+          border-radius: 9px;
         }
         tbody tr:hover {
           background: rgba(255, 255, 255, 0.08);
@@ -2601,14 +3653,14 @@ export default function Page() {
         }
         @media (max-width: 1200px) {
           .tabs {
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
           .grid-2,
           .quote-head {
             grid-template-columns: 1fr;
           }
           .product-compact-grid {
-            grid-template-columns: 78px minmax(180px, 1fr) minmax(150px, 1fr) 90px 90px 90px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
           .resources-row-1 {
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2620,27 +3672,28 @@ export default function Page() {
             grid-template-columns: repeat(3, minmax(0, 1fr));
           }
           .detail-compact-grid {
-            grid-template-columns: repeat(8, minmax(0, 1fr));
+            grid-template-columns: repeat(2, minmax(0, 1fr));
           }
           .field-d-producto,
           .field-d-tipo,
           .field-d-descripcion,
           .field-d-proveedor {
-            grid-column: span 4;
+            grid-column: span 1;
           }
           .field-d-unidad,
           .field-d-cantidad,
           .field-d-costo,
           .field-d-utilidad {
-            grid-column: span 2;
+            grid-column: span 1;
           }
           .field-d-observaciones {
-            grid-column: span 8;
+            grid-column: 1 / -1;
           }
         }
-        @media (max-width: 860px) {
+        @media (max-width: 1024px) {
           .page {
             padding: 6px 6px 22px;
+            max-width: 100vw;
           }
           .grid-3 {
             grid-template-columns: 1fr;
@@ -2672,7 +3725,7 @@ export default function Page() {
             align-items: flex-start;
           }
           .tabs {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: 1fr;
             gap: 8px;
           }
           .sync-indicator {
@@ -2692,22 +3745,34 @@ export default function Page() {
             padding: 18px;
             border-radius: 22px;
           }
-          table {
-            min-width: 0;
+          .cotizador-theme .table-wrap table {
+            min-width: 760px;
+          }
+          .clients-desktop-table {
+            display: none !important;
+          }
+          .clients-mobile-list {
+            display: grid !important;
+          }
+          .summary-table-wrap {
+            display: none !important;
+          }
+          .summary-mobile-list {
+            display: grid !important;
           }
           .cotizador-theme th, .cotizador-theme td {
             padding: 10px 10px;
             font-size: 0.9rem;
-            white-space: normal;
-            overflow-wrap: anywhere;
-            word-break: break-word;
+            white-space: nowrap;
+            overflow-wrap: normal;
+            word-break: normal;
           }
           .mini-btn {
             padding: 8px 10px;
             font-size: 0.86rem;
           }
           .product-compact-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: 1fr;
             gap: 8px;
           }
           .resources-row-1,
@@ -2717,7 +3782,7 @@ export default function Page() {
             gap: 8px;
           }
           .detail-compact-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: 1fr;
             gap: 8px;
           }
           .field-d-producto,
@@ -2766,8 +3831,8 @@ export default function Page() {
             max-width: 100%;
             text-align: left;
           }
-          table {
-            min-width: 0;
+          .cotizador-theme .table-wrap table {
+            min-width: 760px;
           }
           .cotizador-theme h2 {
             font-size: 1.45rem;

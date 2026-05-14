@@ -12,10 +12,10 @@
 }) {
   return (
     <>
-      <section className="card">
+      <section className="card history-shell">
         <h2>Historial compartido</h2>
-        <div className="table-wrap">
-          <table>
+        <div className="table-wrap tabla-container history-desktop-table">
+          <table className="history-table">
             <thead>
               <tr>
                 <th>Nro.</th>
@@ -58,9 +58,39 @@
             </tbody>
           </table>
         </div>
+        <div className="history-mobile-list">
+          {history.length ? (
+            history.map((row) => (
+              <article key={`mobile-${row.id}`} className="history-mobile-card">
+                <div className="history-mobile-head">
+                  <strong>{row.numero || 'S/N'}</strong>
+                  <span>{String(row.fecha || '-').slice(0, 10)}</span>
+                </div>
+                <h3>{row.nombreProyecto || '-'}</h3>
+                <div className="history-mobile-meta">
+                  <span>Cliente: {row.cliente || row.razonSocial || row.empresa || '-'}</span>
+                  <span>Responsable: {row.responsable || '-'}</span>
+                </div>
+                <div className="history-mobile-actions">
+                  <button type="button" className="mini-btn" onClick={() => onOpen(row)}>
+                    Abrir
+                  </button>
+                  <button type="button" className="mini-btn success" onClick={() => onDuplicate(row)}>
+                    Duplicar
+                  </button>
+                  <button type="button" className="mini-btn danger" onClick={() => onDelete(row.id)}>
+                    Eliminar
+                  </button>
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="muted">Aún no hay cotizaciones guardadas en la nube.</div>
+          )}
+        </div>
       </section>
 
-      <section className="card">
+      <section className="card history-shell">
         <h2 style={{ marginTop: 0 }}>Backup</h2>
         <div className="action-row">
           <button

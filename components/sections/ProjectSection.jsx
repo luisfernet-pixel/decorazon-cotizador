@@ -6,6 +6,7 @@
   resetCotizacionActual,
   onSaveDraft,
   savingProject,
+  hideSaveAction = false,
 }) {
   return (
     <section className="card compact-card">
@@ -14,9 +15,11 @@
         <button type="button" className="btn success" onClick={resetCotizacionActual}>
           Nueva cotización
         </button>
-        <button type="button" className="btn secondary" onClick={onSaveDraft} disabled={savingProject}>
-          {savingProject ? 'Guardando...' : 'Guardar borrador'}
-        </button>
+        {!hideSaveAction && (
+          <button type="button" className="btn secondary" onClick={onSaveDraft} disabled={savingProject}>
+            {savingProject ? 'Guardando...' : 'Guardar borrador'}
+          </button>
+        )}
       </div>
       <div className="grid grid-3 form-compact">
         <div className="field">

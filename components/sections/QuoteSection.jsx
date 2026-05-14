@@ -15,6 +15,7 @@ export default function QuoteSection({
   money,
   formatDateDisplay,
   safeText,
+  hideSaveAction = false,
 }) {
   return (
     <section className="card print-area">
@@ -40,7 +41,7 @@ export default function QuoteSection({
       </div>
 
       {/* TABLA */}
-      <div className="table-wrap" style={{ marginTop: 18 }}>
+      <div className="table-wrap tabla-container" style={{ marginTop: 18 }}>
         <table>
           <thead>
             <tr>
@@ -103,9 +104,11 @@ export default function QuoteSection({
 
       {/* BOTONES — solo en pantalla, no se imprimen */}
       <div className="action-row no-print">
-        <button type="button" className="btn" onClick={onSave} disabled={savingProject}>
-          {savingProject ? 'Guardando...' : editingProjectId ? 'Guardar cambios' : 'Guardar'}
-        </button>
+        {!hideSaveAction && (
+          <button type="button" className="btn" onClick={onSave} disabled={savingProject}>
+            {savingProject ? 'Guardando...' : editingProjectId ? 'Guardar cambios' : 'Guardar'}
+          </button>
+        )}
         <button type="button" className="btn secondary" onClick={onDownloadPdf}>
           Imprimir / PDF
         </button>
